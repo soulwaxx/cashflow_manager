@@ -168,15 +168,16 @@ OIDC users are matched by `oidc_sub` only; sharing a verified email with an exis
 | Backend | Uvicorn `--reload` (`:8000`) | Uvicorn (`:8000`, no reload) |
 | Container | Two separate services (`docker-compose.yml`) | Single container (`Dockerfile`) |
 | API routing | Vite proxy `/api` → `:8000` | Nginx `location /api/` proxy |
-| Base images | Python 3.12-slim, Node 20 | Python 3.14-alpine, Node 24-alpine |
+| Base images | Python 3.14-alpine; Node 24-alpine + Nginx 1.31-alpine | Node 24-alpine (build), Python 3.14-alpine (runtime) |
 
 ---
 
 ## CI/CD
 
-- **CI** (`.github/workflows/ci.yml`) — runs on every push and PR; executes backend (pytest) and frontend (Vitest) test suites with coverage
-- **Release** (`.github/workflows/release.yml`) — triggers after CI passes on `main`; uses semantic-release to determine version from conventional commits, builds a multi-arch Docker image (amd64 + arm64), pushes to GHCR, and updates `deploy/docker-compose.yml` with the new image tag
-- **Renovate** (`.github/renovate.json`) — scheduled weekly dependency updates with explicit manager scope (`npm`, `pip_requirements`, Docker, GitHub Actions), grouped patch PRs for backend/frontend, and a dependency dashboard; majors/minors and infrastructure updates require manual review
+- **CI** (`.github/workflows/ci.yml`) — runs backend tests on Python 3.14, frontend build/tests on Node 24, PR-title validation, and production Compose configuration validation on every PR and push to `main`. The multi-architecture image build and amd64 smoke test run on `main` only; Playwright E2E remains manual.
+- **Release** (`.github/workflows/release.yml`) — triggers after successful push CI on `main`; semantic-release creates GitHub Releases and a multi-arch GHCR image (amd64 + arm64) with version and `latest` tags. If a release image is missing or incomplete, rerunning the workflow repairs it; complete existing versioned images are not rebuilt.
+- **Renovate** (`.github/renovate.json`) — the hosted Renovate App runs weekly before 06:00 Saturday. Non-major dependency and lockfile updates may auto-merge; GitHub Actions updates remain manual.
+- **GHCR cleanup** (`.github/workflows/cleanup-packages.yml`) — runs weekly and retains the newest three complete tagged release images (including `latest` on the newest), while removing stale, partial, and orphaned images.
 
 ### Image registry
 

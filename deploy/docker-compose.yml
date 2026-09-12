@@ -1,6 +1,6 @@
 services:
   app:
-    image: ghcr.io/soulwaxx/cashflow-manager:1.4.12
+    image: ghcr.io/soulwaxx/cashflow-manager:latest
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
     ports:
       - "80:8080"

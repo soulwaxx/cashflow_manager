@@ -93,18 +93,17 @@ services:
 
 ## Upgrading
 
-The image version is set in `deploy/docker-compose.yml`. To upgrade:
+`deploy/docker-compose.yml` tracks the `latest` GHCR image. To upgrade, pull the current image and restart:
 
 ```bash
 cd deploy/
-# edit docker-compose.yml: update image tag to new version
 docker compose pull
 docker compose up -d
 ```
 
 Alembic migrations run automatically on startup — no manual migration step is needed.
 
-The CI/CD pipeline auto-updates `deploy/docker-compose.yml` with the latest version on every release (via semantic-release). If you track the `main` branch, pull the repo and re-deploy:
+After a release, pull the repository if you need deployment configuration changes, then pull and restart:
 
 ```bash
 git pull

@@ -107,7 +107,7 @@ Both can be active simultaneously. See [docs/authentication.md](docs/authenticat
 
 ## Development
 
-Prerequisites: Python 3.14+, Node 22+, Docker (optional).
+Prerequisites: Python 3.14+, Node 24+, Docker (optional).
 
 ```bash
 # Backend
