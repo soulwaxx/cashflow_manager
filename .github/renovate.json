@@ -12,8 +12,9 @@
   "semanticCommitType": "chore",
   "timezone": "Europe/Rome",
   "labels": ["dependencies"],
-  "prConcurrentLimit": 0,
+  "prConcurrentLimit": 3,
   "prHourlyLimit": 0,
+  "schedule": ["before 06:00 on saturday"],
   "dependencyDashboard": false,
   "vulnerabilityAlerts": {
     "enabled": true,

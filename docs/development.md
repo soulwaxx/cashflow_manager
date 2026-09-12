@@ -5,7 +5,7 @@
 | Tool | Version |
 |---|---|
 | Python | 3.14+ |
-| Node.js | 22+ |
+| Node.js | 24+ |
 | npm | 10+ |
 | Docker + Compose | Optional — for running the full stack containerized |
 
@@ -108,9 +108,9 @@ npm run test -- src/tests/transactions.test.ts   # single file
 ```
 
 Tests use Vitest + Testing Library. API calls are mocked with MSW (Mock Service Worker).
-The current suite is green at `148 passed`. In jsdom, logout redirects still emit harmless "navigation to another Document" warnings because the browser environment is mocked.
+In jsdom, logout redirects still emit harmless "navigation to another Document" warnings because the browser environment is mocked.
 
-### E2E (Playwright)
+### E2E (Playwright, manual only)
 
 ```bash
 # Requires the full app running (backend + frontend)
@@ -191,11 +191,12 @@ cashflow-manager/
 
 ## Code Conventions
 
-- **Conventional commits** are required — the CI/CD pipeline uses semantic-release to derive the version and changelog from commit messages
+- **Conventional PR titles** are required. CI validates the PR title (including an optional scope and `!`); squash merging uses that title as the commit message consumed by semantic-release.
   - `feat:` → minor version bump
   - `fix:` → patch version bump
   - `feat!:` or `BREAKING CHANGE:` footer → major version bump
   - `chore:`, `docs:`, `test:`, `refactor:` → no version bump
+- Release notes are published with the GitHub Release; this repository does not maintain a generated `CHANGELOG.md`.
 
 - **Backend:** PEP 8, type hints on all function signatures, Pydantic schemas for all API I/O
 - **Frontend:** TypeScript strict mode, all API responses typed via `types/api.ts`

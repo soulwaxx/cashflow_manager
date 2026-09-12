@@ -4,21 +4,64 @@ on:
   schedule:
     - cron: '0 4 * * 0'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Preview deletions without changing GHCR
+        required: false
+        default: true
+        type: boolean
+
+concurrency:
+  # Match release so cleanup cannot remove an in-flight multi-architecture image.
+  group: ghcr-mutations-${{ github.repository }}
+  cancel-in-progress: false
 
 permissions:
   packages: write
 
 jobs:
-  cleanup-untagged:
-    name: Delete old untagged GHCR images
+  cleanup:
+    name: Retain complete release images
     runs-on: ubuntu-latest
     steps:
-      - name: Delete old untagged versions
-        uses: actions/delete-package-versions@v5
+      - name: Remove legacy cache tags
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1
         with:
           owner: ${{ github.repository_owner }}
-          package-name: cashflow-manager
-          package-type: container
-          # Multi-arch child manifests are untagged in GHCR, so keep a wide buffer.
-          min-versions-to-keep: 100
-          delete-only-untagged-versions: 'true'
+          package: cashflow-manager
+          delete-tags: sha-*,buildcache
+          validate: true
+          # Scheduled runs delete; manual runs safely preview by default.
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+
+      # This action revision handles partial and ghost images in an if/else-if.
+      # Keep them in separate passes so both classes are removed.
+      - name: Remove partial multi-architecture images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1
+        with:
+          owner: ${{ github.repository_owner }}
+          package: cashflow-manager
+          delete-partial-images: true
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+
+      - name: Remove ghost multi-architecture images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1
+        with:
+          owner: ${{ github.repository_owner }}
+          package: cashflow-manager
+          delete-ghost-images: true
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+
+      - name: Retain the newest complete release images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1
+        with:
+          owner: ${{ github.repository_owner }}
+          package: cashflow-manager
+          # No delete-tags selector: retain the three newest tagged image objects.
+          keep-n-tagged: 3
+          delete-untagged: true
+          delete-orphaned-images: true
+          validate: true
+          dry-run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
