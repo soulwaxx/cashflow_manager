@@ -22,3 +22,5 @@ e2e/test-results/
 .claude
 docs/superpowers
 CLAUDE.md
+# Keep repository agent guidance even when a global ignore excludes it.
+!AGENTS.md

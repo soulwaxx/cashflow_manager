@@ -25,12 +25,14 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 
-# Run database migrations
-alembic upgrade head
+# Settings reads .env from the process working directory
+cp ../.env.example .env
+mkdir -p data
+# Edit backend/.env and set DB_PATH=./data/cashflow.db
 
-# Start the dev server
+# Start the dev server (lifespan applies migrations to DB_PATH)
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -68,19 +70,22 @@ The root `data/` directory is bind-mounted into the backend container.
 
 ## Environment Variables (Development)
 
-Copy `.env.example` to `.env` at the repo root:
+For the root Docker Compose workflow, copy `.env.example` to `.env` at the repository root:
 
 ```bash
 cp .env.example .env
 ```
 
-The backend reads variables from this file. The defaults in `.env.example` are suitable for local development (insecure keys, SQLite at `/app/data/cashflow.db` — adjust `DB_PATH` if running outside Docker).
+For a direct backend process started from `backend/`, `Settings(env_file=".env")` instead reads `backend/.env`. Copy the same template there and change the database to a writable host path:
 
-For running the backend directly (not in Docker), set:
-
-```env
-DB_PATH=./data/cashflow.db
+```bash
+cd backend
+cp ../.env.example .env
+mkdir -p data
+# In backend/.env: DB_PATH=./data/cashflow.db
 ```
+
+The development template intentionally uses insecure keys with `DEVELOPMENT_MODE=true`; never reuse those values in production.
 
 ---
 
@@ -104,7 +109,7 @@ Tests use an in-memory SQLite database. `conftest.py` creates a fresh DB per tes
 cd frontend
 npm test              # run once
 npm run test:watch    # watch mode
-npm run test -- src/tests/transactions.test.ts   # single file
+npm test -- tests/pages/TransactionsPage.test.tsx   # single file
 ```
 
 Tests use Vitest + Testing Library. API calls are mocked with MSW (Mock Service Worker).
@@ -115,14 +120,17 @@ In jsdom, logout redirects still emit harmless "navigation to another Document" 
 ```bash
 # Requires the full app running (backend + frontend)
 cd e2e
+npm ci
 npx playwright install   # first time only
-npx playwright test
-npx playwright test --ui  # interactive mode
+npm test
+npm run test:ui          # interactive mode
 ```
 
 ---
 
 ## Database Migrations
+
+> **Target-path caveat:** direct Alembic CLI commands currently read `sqlalchemy.url` from `backend/alembic.ini` (`/app/data/cashflow.db`) and do not honor `DB_PATH`. FastAPI lifespan overrides the URL and migrates the configured `DB_PATH`. Verify the target database before running any direct Alembic command.
 
 ```bash
 cd backend
@@ -198,7 +206,7 @@ cashflow-manager/
   - `chore:`, `docs:`, `test:`, `refactor:` → no version bump
 - Release notes are published with the GitHub Release; this repository does not maintain a generated `CHANGELOG.md`.
 
-- **Backend:** PEP 8, type hints on all function signatures, Pydantic schemas for all API I/O
+- **Backend:** Follow existing PEP 8 style; use type hints and Pydantic schemas at HTTP interfaces
 - **Frontend:** TypeScript strict mode, all API responses typed via `types/api.ts`
 
 ---
