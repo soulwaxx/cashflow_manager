@@ -126,16 +126,16 @@ def test_onboarding_creates_main_bank_history(client, db):
     assert float(history[0].opening_balance) == pytest.approx(5000.00)
     assert history[0].valid_from == "2026-01-01"
 
-def test_onboarding_stores_opening_balances_in_user_settings(client, db):
+def test_onboarding_creates_stable_nonbank_accounts(client, db):
     client.post("/api/v1/auth/register", json={
         "email": "alice@example.com", "password": "Password1!", "name": "Alice"
     })
     client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
-    from app.models.user import UserSetting
-    settings = {s.key: s.value for s in db.query(UserSetting).all()}
-    assert settings.get("tracking_start_date") == "2026-01-01"
-    assert settings.get("opening_saving_balance_MySavings") == "3000.0"
-    assert settings.get("opening_investment_balance_MyBroker") == "8000.0"
+    from app.models.account import Account
+    accounts = {(account.type, account.name): float(account.opening_balance) for account in db.query(Account).all()}
+    assert accounts[("saving", "MySavings")] == 3000.0
+    assert accounts[("investment", "MyBroker")] == 8000.0
+    assert accounts[("pension", "Pension")] == 0.0
 
 def test_onboarding_seeds_default_categories(client, db):
     client.post("/api/v1/auth/register", json={

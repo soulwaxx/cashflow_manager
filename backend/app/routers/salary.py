@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user
 from app.models.user import User
+from app.models.account import Account
 from app.models.salary import SalaryConfig
 from app.schemas.salary import SalaryCalculationRequest, SalaryConfigCreate
 from app.services.salary import SalaryCalculationError, calculate_salary
@@ -17,6 +18,11 @@ def _calculate_or_422(salary_cfg, tax_cfg):
         return calculate_salary(salary_cfg, tax_cfg)
     except SalaryCalculationError as exc:
         raise HTTPException(422, str(exc)) from exc
+
+
+def _ensure_pension_account(db: Session, user_id: str) -> None:
+    if not db.query(Account.id).filter_by(user_id=user_id, type="pension").first():
+        db.add(Account(user_id=user_id, type="pension", name="Pension", opening_balance=0))
 
 
 def _salary_response(salary_config: SalaryConfig) -> dict:
@@ -63,6 +69,8 @@ def create_salary(req: SalaryConfigCreate, current_user: User = Depends(get_curr
     if not tax_cfg:
         raise HTTPException(422, "No tax config found for the given period")
     breakdown = _calculate_or_422(req, tax_cfg)
+    if req.employer_contrib_rate > 0 or req.voluntary_contrib_rate > 0:
+        _ensure_pension_account(db, current_user.id)
     sc = SalaryConfig(
         user_id=current_user.id,
         **req.model_dump(),
@@ -83,6 +91,8 @@ def update_salary(salary_id: str, req: SalaryConfigCreate, current_user: User = 
     if not tax_cfg:
         raise HTTPException(422, "No tax config found for the given period")
     breakdown = _calculate_or_422(req, tax_cfg)
+    if req.employer_contrib_rate > 0 or req.voluntary_contrib_rate > 0:
+        _ensure_pension_account(db, current_user.id)
 
     values = req.model_dump(exclude_none=True)
     if "manual_net_override" in req.model_fields_set:

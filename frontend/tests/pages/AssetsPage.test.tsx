@@ -20,8 +20,8 @@ beforeEach(() => {
   server.use(
     http.get(`/api/v1/assets/${year}`, () =>
       HttpResponse.json([
-        { asset_type: 'saving', asset_name: 'EmergencyFund', computed_amount: 8000, manual_override: null, final_amount: 8000 },
-        { asset_type: 'pension', asset_name: 'AXA', computed_amount: 3200, manual_override: 3500, final_amount: 3500 },
+        { asset_type: 'saving', asset_name: 'EmergencyFund', account_id: 'account-1', computed_amount: 8000, manual_override: null, final_amount: 8000 },
+        { asset_type: 'pension', asset_name: 'AXA', account_id: 'account-2', computed_amount: 3200, manual_override: 3500, final_amount: 3500 },
       ])
     )
   );
@@ -60,10 +60,10 @@ test('AssetsPage shows year selector', async () => {
   await waitFor(() => expect(screen.getByRole('spinbutton')).toBeInTheDocument());
 });
 
-test('AssetsPage add account stores dynamic opening balance setting', async () => {
+test('AssetsPage add account creates a stable account', async () => {
   let requestBody: unknown;
   server.use(
-    http.put('/api/v1/user-settings', async ({ request }) => {
+    http.post('/api/v1/accounts', async ({ request }) => {
       requestBody = await request.json();
       return HttpResponse.json({ ok: true });
     })
@@ -77,8 +77,8 @@ test('AssetsPage add account stores dynamic opening balance setting', async () =
   await user.click(screen.getByRole('button', { name: /^add$/i }));
 
   await waitFor(() => {
-    expect(requestBody).toEqual([
-      { key: 'opening_saving_balance_Emergency', value: '1234' },
-    ]);
+    expect(requestBody).toEqual({
+      type: 'saving', name: 'Emergency', opening_balance: 1234,
+    });
   });
 });

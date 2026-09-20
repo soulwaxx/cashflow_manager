@@ -19,7 +19,7 @@ These have no safe default and **must** be set in production.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DB_PATH` | `/app/data/cashflow.db` | Absolute path inside the container. The directory must be writable and bind-mounted from the host. Do not change unless you have a specific reason. |
+| `DB_PATH` | `/app/data/cashflow.db` | SQLite path used by both FastAPI and direct Alembic commands. In the container it must be writable and bind-mounted from the host. |
 
 ---
 
@@ -77,4 +77,5 @@ See `deploy/.env.example` for the production template, or `.env.example` at the 
 
 - `SECRET_KEY` and `SESSION_ENCRYPTION_KEY` are required in production. The startup guard rejects missing/template values, low-entropy values, a `SECRET_KEY` shorter than 32 bytes, and malformed `SESSION_ENCRYPTION_KEY` values. `DEVELOPMENT_MODE=true` bypasses this guard for local development only.
 - `BASIC_AUTH_ENABLED` and `OIDC_ENABLED` can be toggled independently without data loss. OIDC users are matched by provider subject (`oidc_sub`); the backend does not auto-link them to an existing password-auth account by shared email.
+- FastAPI lifespan is the sole automatic migration owner and upgrades `DB_PATH` before serving requests. `start.sh` only launches Uvicorn. Direct Alembic commands use the same settings and may be run only when no other app process is starting against that SQLite database; deploy a single startup process per database to avoid concurrent SQLite migration attempts.
 - Changing `TZ` does not retroactively shift stored timestamps; it affects how new timestamps and billing boundaries are computed.

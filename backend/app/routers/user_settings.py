@@ -7,21 +7,14 @@ from app.models.user import User, UserSetting
 
 router = APIRouter(prefix="/user-settings", tags=["user-settings"])
 
-# Onboarding owns these invariants; settings writes must not make onboarding reusable.
+# Onboarding owns these invariants; account opening balances live on Account rows.
 ALLOWED_SETTING_KEYS = frozenset({
     "theme",
 })
 
-ALLOWED_SETTING_PREFIXES = (
-    "opening_saving_balance_",
-    "opening_investment_balance_",
-)
-
 
 def _is_allowed_setting_key(key: str) -> bool:
-    if key in ALLOWED_SETTING_KEYS:
-        return True
-    return any(key.startswith(prefix) and key[len(prefix):].strip() for prefix in ALLOWED_SETTING_PREFIXES)
+    return key in ALLOWED_SETTING_KEYS
 
 
 class SettingItem(BaseModel):

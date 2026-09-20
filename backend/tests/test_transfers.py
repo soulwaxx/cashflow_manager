@@ -437,6 +437,21 @@ def test_create_transfer_rejects_blank_account_name(client, field):
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize("field", ["from_account_name", "to_account_name"])
+def test_create_transfer_rejects_account_name_over_255_characters(client, field):
+    _setup(client)
+    payload = {
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    }
+    payload[field] = "a" * 256
+
+    response = client.post("/api/v1/transfers", json=payload)
+
+    assert response.status_code == 422
+
+
 @pytest.mark.parametrize("amount", [0, -1, "NaN", "Infinity", "1.001", "10000000000"])
 def test_create_transfer_rejects_invalid_amount(client, amount):
     _setup(client)

@@ -21,9 +21,13 @@ class TransferCreate(BaseModel):
     detail: str = ""
     amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     from_account_type: AccountType
-    from_account_name: str
+    from_account_id: Optional[str] = None
+    # Name fields are accepted only as a bounded compatibility input. New clients
+    # submit stable IDs, while the server snapshots the resolved current name.
+    from_account_name: Optional[str] = Field(None, max_length=255)
     to_account_type: AccountType
-    to_account_name: str
+    to_account_id: Optional[str] = None
+    to_account_name: Optional[str] = Field(None, max_length=255)
     recurrence_months: Optional[int] = Field(None, ge=1, le=60)
     notes: Optional[str] = None
 
@@ -34,16 +38,29 @@ class TransferCreate(BaseModel):
 
     @field_validator("from_account_name", "to_account_name")
     @classmethod
-    def validate_account_name(cls, value: str) -> str:
+    def validate_account_name(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
         value = value.strip()
         if not value:
             raise ValueError("Account name must not be blank")
         return value
 
     @model_validator(mode="after")
-    def reject_identical_endpoints(self) -> TransferCreate:
+    def validate_endpoints(self) -> TransferCreate:
+        for prefix in ("from", "to"):
+            if not getattr(self, f"{prefix}_account_id") and not getattr(self, f"{prefix}_account_name"):
+                raise ValueError(f"{prefix}_account_id is required")
         if (
             self.from_account_type == self.to_account_type
+            and self.from_account_id is not None
+            and self.from_account_id == self.to_account_id
+        ):
+            raise ValueError("Transfer endpoints must be different accounts")
+        if (
+            self.from_account_type == self.to_account_type
+            and self.from_account_id is None
+            and self.to_account_id is None
             and self.from_account_name == self.to_account_name
         ):
             raise ValueError("Transfer endpoints must be different accounts")

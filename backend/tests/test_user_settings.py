@@ -112,21 +112,12 @@ def test_generic_settings_cannot_bypass_completed_onboarding(client, db, key, va
     db.expire_all()
     assert _snapshot_user_rows(db, user.id) == before
 
-def test_update_asset_opening_balance_settings(client):
-    """Saving/investment account opening balances are dynamic but intentionally allowed."""
+def test_account_opening_balance_settings_are_rejected(client):
+    """Opening balances are stable Account rows rather than mutable setting keys."""
     _setup(client)
     r = client.put("/api/v1/user-settings", json=[
         {"key": "opening_saving_balance_Emergency", "value": "1000"},
-        {"key": "opening_investment_balance_Broker", "value": "2500"},
     ])
-    assert r.status_code == 200
-    settings = {item["key"]: item["value"] for item in client.get("/api/v1/user-settings").json()}
-    assert settings["opening_saving_balance_Emergency"] == "1000"
-    assert settings["opening_investment_balance_Broker"] == "2500"
-
-def test_update_empty_asset_opening_balance_suffix_returns_422(client):
-    _setup(client)
-    r = client.put("/api/v1/user-settings", json=[{"key": "opening_saving_balance_", "value": "0"}])
     assert r.status_code == 422
 
 def test_users_me_returns_profile(client):

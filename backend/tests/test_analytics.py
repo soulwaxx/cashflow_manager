@@ -10,6 +10,48 @@ def _setup(client):
     cat_id = next(c["id"] for c in client.get("/api/v1/categories").json() if c["type"] == "Housing")
     return pm_id, cat_id
 
+@pytest.mark.parametrize("endpoint", ["categories", "transfers"])
+@pytest.mark.parametrize("year_month", ["2000-01", "2100-12"])
+def test_analytics_accepts_supported_canonical_year_month_boundaries(client, endpoint, year_month):
+    _setup(client)
+    response = client.get(
+        f"/api/v1/analytics/{endpoint}",
+        params={"from": year_month, "to": year_month},
+    )
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("endpoint", ["categories", "transfers"])
+@pytest.mark.parametrize(
+    ("from_month", "to_month"),
+    [
+        ("2026-1", "2026-01"),
+        ("2026-13", "2026-01"),
+        ("2026-02-30", "2026-03"),
+        ("2026-03", "2026-01"),
+        ("NaN", "2026-01"),
+        ("Infinity", "2026-01"),
+    ],
+)
+def test_analytics_rejects_invalid_reporting_ranges(client, endpoint, from_month, to_month):
+    _setup(client)
+    response = client.get(
+        f"/api/v1/analytics/{endpoint}",
+        params={"from": from_month, "to": to_month},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("year_month", ["1999-12", "2101-01"])
+def test_analytics_rejects_out_of_range_years(client, year_month):
+    _setup(client)
+    response = client.get(
+        "/api/v1/analytics/categories",
+        params={"from": year_month, "to": year_month},
+    )
+    assert response.status_code == 422
+
+
 def test_analytics_returns_per_category_per_month(client):
     pm_id, cat_id = _setup(client)
     client.post("/api/v1/transactions", json={
@@ -114,6 +156,64 @@ def test_transfer_analytics_no_data_returns_empty(client):
     r = client.get("/api/v1/analytics/transfers", params={"from": "2025-01", "to": "2025-12"})
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_transfer_analytics_uses_stable_account_identity_after_rename_and_isolates_users(client, db):
+    """Stable history keeps one current-label series and never resolves a foreign account."""
+    from app.models.account import Account
+    from app.models.payment_method import PaymentMethod
+    from app.models.transfer import Transfer
+    from app.models.user import User
+
+    bank_id, _ = _setup(client)
+    alice_id = db.get(PaymentMethod, bank_id).user_id
+    saving = db.query(Account).filter_by(user_id=alice_id, type="saving", name="MySavings").one()
+
+    assert client.post("/api/v1/transfers", json={
+        "date": "2026-01-01", "detail": "before rename", "amount": 100,
+        "from_account_type": "bank", "from_account_id": bank_id,
+        "to_account_type": "saving", "to_account_id": saving.id,
+    }).status_code == 200
+    saving.name = "Renamed savings"
+    db.commit()
+    assert client.post("/api/v1/transfers", json={
+        "date": "2026-02-01", "detail": "after rename", "amount": 200,
+        "from_account_type": "bank", "from_account_id": bank_id,
+        "to_account_type": "saving", "to_account_id": saving.id,
+    }).status_code == 200
+
+    bob = User(email="bob-transfer-analytics@example.com", name="Bob")
+    db.add(bob)
+    db.flush()
+    foreign_saving = Account(user_id=bob.id, type="saving", name="Bob secret", opening_balance=0)
+    db.add(foreign_saving)
+    db.flush()
+    db.add_all([
+        Transfer(
+            user_id=alice_id, date="2026-03-01", detail="corrupt foreign reference", amount=999,
+            from_account_type="bank", from_account_name="MyBank",
+            to_account_type="saving", to_account_name="Bob secret", to_account_id=foreign_saving.id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=alice_id, date="2026-04-01", detail="legacy history", amount=50,
+            from_account_type="bank", from_account_name="MyBank",
+            to_account_type="saving", to_account_name="Legacy savings",
+            billing_month="2026-04-01",
+        ),
+    ])
+    db.commit()
+
+    response = client.get("/api/v1/analytics/transfers", params={"from": "2026-01", "to": "2026-04"})
+    assert response.status_code == 200
+    rows = response.json()
+    stable_rows = [row for row in rows if row["to_account_name"] == "Renamed savings"]
+    assert {row["month"]: row["total_amount"] for row in stable_rows} == {
+        "2026-01": pytest.approx(100.0), "2026-02": pytest.approx(200.0),
+    }
+    assert len({row["to_account_name"] for row in stable_rows}) == 1
+    assert all(row["to_account_name"] != "Bob secret" for row in rows)
+    assert next(row for row in rows if row["to_account_name"] == "Legacy savings")["total_amount"] == pytest.approx(50.0)
 
 
 def test_category_spending_aggregates_correctly(client):

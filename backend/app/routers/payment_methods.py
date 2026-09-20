@@ -119,18 +119,23 @@ def update_method(pm_id: str, req: PaymentMethodUpdate, current_user: User = Dep
         ))
     for field, val in payload.items():
         setattr(pm, field, val)
-    # Cascade name change to all transfers referencing this account name
-    if payload.get("name") and payload["name"] != old_name:
-        (
-            db.query(Transfer)
-            .filter_by(user_id=current_user.id, from_account_name=old_name)
-            .update({"from_account_name": payload["name"]})
-        )
-        (
-            db.query(Transfer)
-            .filter_by(user_id=current_user.id, to_account_name=old_name)
-            .update({"to_account_name": payload["name"]})
-        )
+    # Transfer bank snapshots follow stable payment-method IDs. Name matching is
+    # retained only for legacy bank endpoints whose IDs were never backfilled.
+    if pm.type == "bank" and payload.get("name") and payload["name"] != old_name:
+        for prefix in ("from", "to"):
+            payment_method_id = getattr(Transfer, f"{prefix}_payment_method_id")
+            account_type = getattr(Transfer, f"{prefix}_account_type")
+            account_name = getattr(Transfer, f"{prefix}_account_name")
+            db.query(Transfer).filter(
+                Transfer.user_id == current_user.id,
+                payment_method_id == pm.id,
+            ).update({f"{prefix}_account_name": payload["name"]})
+            db.query(Transfer).filter(
+                Transfer.user_id == current_user.id,
+                payment_method_id.is_(None),
+                account_type == "bank",
+                account_name == old_name,
+            ).update({f"{prefix}_account_name": payload["name"]})
     try:
         db.commit()
     except IntegrityError:

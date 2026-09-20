@@ -2,6 +2,7 @@ from typing import List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.models.transaction import Transaction
+from app.models.account import Account
 from app.models.category import Category
 from app.models.transfer import Transfer
 
@@ -76,7 +77,47 @@ def transfer_spending(user_id: str, from_ym: str, to_ym: str, db: Session) -> li
     if from_date > to_date:
         return []
 
-    rows = (
+    stable_rows = (
+        db.query(
+            Transfer.to_account_id,
+            Transfer.billing_month,
+            func.sum(Transfer.amount).label("total_amount"),
+        )
+        .filter(
+            Transfer.user_id == user_id,
+            Transfer.billing_month >= from_date,
+            Transfer.billing_month <= to_date,
+            Transfer.to_account_id.is_not(None),
+        )
+        .group_by(Transfer.to_account_id, Transfer.billing_month)
+        .all()
+    )
+    account_ids = {row.to_account_id for row in stable_rows}
+    accounts = {
+        account.id: account
+        for account in db.query(Account).filter(
+            Account.user_id == user_id,
+            Account.id.in_(account_ids),
+            Account.type.in_(["saving", "investment", "pension"]),
+        ).all()
+    } if account_ids else {}
+
+    result = []
+    for row in stable_rows:
+        account = accounts.get(row.to_account_id)
+        # Do not expose or aggregate a corrupt reference to another user's
+        # account. Stable rows always use the current owned account label.
+        if account is not None:
+            result.append({
+                "to_account_type": account.type,
+                "to_account_name": account.name,
+                "month": row.billing_month[:7],
+                "total_amount": round(float(row.total_amount), 2),
+            })
+
+    # Name snapshots remain only for historical rows without a stable account
+    # ID. They must never be mixed into a stable account's identity grouping.
+    legacy_rows = (
         db.query(
             Transfer.to_account_type,
             Transfer.to_account_name,
@@ -87,18 +128,16 @@ def transfer_spending(user_id: str, from_ym: str, to_ym: str, db: Session) -> li
             Transfer.user_id == user_id,
             Transfer.billing_month >= from_date,
             Transfer.billing_month <= to_date,
+            Transfer.to_account_id.is_(None),
             Transfer.to_account_type.in_(["saving", "investment", "pension"]),
         )
         .group_by(Transfer.to_account_type, Transfer.to_account_name, Transfer.billing_month)
         .all()
     )
-
-    return [
-        {
-            "to_account_type": r.to_account_type,
-            "to_account_name": r.to_account_name,
-            "month": r.billing_month[:7],
-            "total_amount": round(float(r.total_amount), 2),
-        }
-        for r in rows
-    ]
+    result.extend({
+        "to_account_type": row.to_account_type,
+        "to_account_name": row.to_account_name,
+        "month": row.billing_month[:7],
+        "total_amount": round(float(row.total_amount), 2),
+    } for row in legacy_rows)
+    return result

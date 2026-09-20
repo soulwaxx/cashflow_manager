@@ -1,55 +1,68 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
-from typing import Optional, Literal
+from dataclasses import dataclass
+from typing import Literal, Optional
+
 from dateutil.parser import parse as parse_date
 from dateutil.relativedelta import relativedelta
-from app.deps import get_db, get_current_user
-from app.models.user import User, UserSetting
-from app.models.transfer import Transfer
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.orm import Session
+
+from app.deps import get_current_user, get_db
+from app.models.account import Account
 from app.models.payment_method import PaymentMethod
-from app.models.salary import SalaryConfig
+from app.models.transfer import Transfer
+from app.models.user import User
 from app.schemas.transfer import TransferCreate, TransferUpdate
 
 router = APIRouter(prefix="/transfers", tags=["transfers"])
 
 
+@dataclass(frozen=True)
+class _ResolvedAccount:
+    name: str
+    account_id: Optional[str]
+    payment_method_id: Optional[str]
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        if self.payment_method_id is not None:
+            return ("bank", self.payment_method_id)
+        assert self.account_id is not None
+        return ("account", self.account_id)
+
+
 def _validate_account(
-    db: Session, user_id: str, account_type: str, account_name: str
-) -> Optional[str]:
-    """Validate a current user-owned account and return its bank payment-method id."""
+    db: Session,
+    user_id: str,
+    account_type: str,
+    account_id: Optional[str],
+    account_name: Optional[str],
+) -> _ResolvedAccount:
+    """Resolve an owned active endpoint without creating name-derived accounts.
+
+    Account names remain a compatibility-only input for clients predating stable
+    IDs. They must resolve to exactly the current owned active account; they can
+    never introduce an account or revive an inactive one.
+    """
     if account_type == "bank":
-        pm = (
-            db.query(PaymentMethod)
-            .filter_by(user_id=user_id, name=account_name, type="bank", is_active=True)
-            .first()
+        query = db.query(PaymentMethod).filter_by(
+            user_id=user_id, type="bank", is_active=True
         )
+        pm = query.filter_by(id=account_id).first() if account_id else query.filter_by(name=account_name).first()
         if pm is None:
             raise HTTPException(422, "Bank account not found or inactive")
-        return pm.id
+        if account_id and account_name and pm.name != account_name:
+            raise HTTPException(422, "Bank account ID and name do not match")
+        return _ResolvedAccount(pm.name, None, pm.id)
 
-    if account_type in {"saving", "investment"}:
-        setting_key = f"opening_{account_type}_balance_{account_name}"
-        setting = db.query(UserSetting).filter_by(user_id=user_id, key=setting_key).first()
-        if setting is None:
-            raise HTTPException(422, f"{account_type.title()} account not found")
-        return None
-
-    has_pension = (
-        db.query(SalaryConfig)
-        .filter(
-            SalaryConfig.user_id == user_id,
-            or_(
-                SalaryConfig.employer_contrib_rate > 0,
-                SalaryConfig.voluntary_contrib_rate > 0,
-            ),
-        )
-        .first()
-        is not None
+    query = db.query(Account).filter_by(
+        user_id=user_id, type=account_type, is_active=True
     )
-    if account_name != "Pension" or not has_pension:
-        raise HTTPException(422, "Pension account not found")
-    return None
+    account = query.filter_by(id=account_id).first() if account_id else query.filter_by(name=account_name).first()
+    if account is None:
+        raise HTTPException(422, f"{account_type.title()} account not found or inactive")
+    if account_id and account_name and account.name != account_name:
+        raise HTTPException(422, "Account ID and name do not match")
+    return _ResolvedAccount(account.name, account.id, None)
 
 
 def _promote_transfer_series_root_if_needed(db: Session, user_id: str, transfer: Transfer) -> None:
@@ -74,6 +87,7 @@ def _promote_transfer_series_root_if_needed(db: Session, user_id: str, transfer:
     new_root.parent_transfer_id = None
     for child in children[1:]:
         child.parent_transfer_id = new_root.id
+
 
 @router.get("")
 def list_transfers(
@@ -100,31 +114,47 @@ def list_transfers(
         q = q.limit(limit)
     return q.all()
 
+
 @router.post("")
-def create_transfer(req: TransferCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def create_transfer(
+    req: TransferCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     tx_date = parse_date(req.date).date()
     bm = tx_date.replace(day=1)  # transfers always bill current month
-
-    from_pm_id = _validate_account(
-        db, current_user.id, req.from_account_type, req.from_account_name
+    from_account = _validate_account(
+        db, current_user.id, req.from_account_type, req.from_account_id, req.from_account_name
     )
-    to_pm_id = _validate_account(
-        db, current_user.id, req.to_account_type, req.to_account_name
+    to_account = _validate_account(
+        db, current_user.id, req.to_account_type, req.to_account_id, req.to_account_name
     )
+    if from_account.identity == to_account.identity:
+        raise HTTPException(422, "Transfer endpoints must be different accounts")
 
+    transfer_fields = {
+        "user_id": current_user.id,
+        "detail": req.detail,
+        "amount": req.amount,
+        "from_account_type": req.from_account_type,
+        "from_account_name": from_account.name,
+        "from_account_id": from_account.account_id,
+        "from_payment_method_id": from_account.payment_method_id,
+        "to_account_type": req.to_account_type,
+        "to_account_name": to_account.name,
+        "to_account_id": to_account.account_id,
+        "to_payment_method_id": to_account.payment_method_id,
+        "recurrence_months": req.recurrence_months,
+        "notes": req.notes,
+    }
     if req.recurrence_months:
         first = None
         for i in range(req.recurrence_months):
             occ_date = tx_date + relativedelta(months=i)
             t = Transfer(
-                user_id=current_user.id, date=str(occ_date), detail=req.detail,
-                amount=req.amount, from_account_type=req.from_account_type,
-                from_account_name=req.from_account_name, to_account_type=req.to_account_type,
-                to_account_name=req.to_account_name,
+                **transfer_fields,
+                date=str(occ_date),
                 billing_month=str(occ_date.replace(day=1)),
-                recurrence_months=req.recurrence_months, notes=req.notes,
-                from_payment_method_id=from_pm_id,
-                to_payment_method_id=to_pm_id,
             )
             db.add(t)
             db.flush()
@@ -137,17 +167,15 @@ def create_transfer(req: TransferCreate, current_user: User = Depends(get_curren
         return first
 
     t = Transfer(
-        user_id=current_user.id, date=req.date, detail=req.detail,
-        amount=req.amount, from_account_type=req.from_account_type,
-        from_account_name=req.from_account_name, to_account_type=req.to_account_type,
-        to_account_name=req.to_account_name, billing_month=str(bm), notes=req.notes,
-        from_payment_method_id=from_pm_id,
-        to_payment_method_id=to_pm_id,
+        **transfer_fields,
+        date=req.date,
+        billing_month=str(bm),
     )
     db.add(t)
     db.commit()
     db.refresh(t)
     return t
+
 
 @router.get("/{transfer_id}")
 def get_transfer(transfer_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -155,6 +183,7 @@ def get_transfer(transfer_id: str, current_user: User = Depends(get_current_user
     if not t:
         raise HTTPException(404, "Not found")
     return t
+
 
 @router.put("/{transfer_id}")
 def update_transfer(
@@ -195,6 +224,7 @@ def update_transfer(
     db.commit()
     db.refresh(t)
     return t
+
 
 @router.delete("/{transfer_id}")
 def delete_transfer(

@@ -6,6 +6,8 @@ import { server } from '../mocks/server';
 import { AuthProvider } from '../../src/contexts/AuthContext';
 import DashboardPage from '../../src/pages/DashboardPage';
 
+let assetAsOf: string | null;
+
 function wrapper({ children }: { children: React.ReactNode }) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return (
@@ -18,6 +20,7 @@ function wrapper({ children }: { children: React.ReactNode }) {
 }
 
 beforeEach(() => {
+  assetAsOf = null;
   const year = new Date().getFullYear();
   const month = new Date().getMonth() + 1;
   server.use(
@@ -31,11 +34,12 @@ beforeEach(() => {
         bank_balance: 4500,
       })
     ),
-    http.get(`/api/v1/assets/${year}`, () =>
-      HttpResponse.json([
+    http.get(`/api/v1/assets/${year}`, ({ request }) => {
+      assetAsOf = new URL(request.url).searchParams.get('as_of');
+      return HttpResponse.json([
         { asset_type: 'saving', asset_name: 'SavingAccount', computed_amount: 10000, manual_override: null, final_amount: 10000 },
-      ])
-    )
+      ]);
+    })
   );
 });
 
@@ -64,7 +68,10 @@ test('DashboardPage shows total incomes', async () => {
   await waitFor(() => expect(screen.getByText(/3\.000/)).toBeInTheDocument());
 });
 
-test('DashboardPage shows saving account in asset strip', async () => {
+test('DashboardPage requests assets as of the selected month', async () => {
+  const current = new Date();
+  const expectedAsOf = `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}-01`;
   render(<DashboardPage />, { wrapper });
   await waitFor(() => expect(screen.getByText(/SavingAccount/i)).toBeInTheDocument());
+  expect(assetAsOf).toBe(expectedAsOf);
 });

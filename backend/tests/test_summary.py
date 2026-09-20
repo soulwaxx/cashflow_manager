@@ -13,6 +13,34 @@ def test_summary_year_returns_12_months(client):
     assert r.status_code == 200
     assert len(r.json()) == 12
 
+@pytest.mark.parametrize("month", [1, 12])
+def test_summary_accepts_boundary_months(client, month):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/2026/{month}")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("month", [0, 13])
+def test_summary_rejects_out_of_range_months(client, month):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/2026/{month}")
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("year", [2000, 2100])
+def test_summary_accepts_supported_year_boundaries(client, year):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/{year}")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("year", [1999, 2101])
+def test_summary_rejects_out_of_range_years(client, year):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/{year}")
+    assert response.status_code == 422
+
+
 def test_summary_month_contains_bank_balance(client):
     _setup(client)
     r = client.get("/api/v1/summary/2026/1")

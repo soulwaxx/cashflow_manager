@@ -4,7 +4,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { transfersApi } from '../../api/transfers';
 import { paymentMethodsApi } from '../../api/paymentMethods';
-import { assetsApi } from '../../api/assets';
+import { accountsApi } from '../../api/accounts';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
@@ -20,8 +20,8 @@ const ACCOUNT_TYPES: Array<{ value: string; label: string }> = [
 
 interface Fields {
   date: string; detail: string; amount: string;
-  from_account_type: AccountType; from_account_name: string;
-  to_account_type: AccountType; to_account_name: string;
+  from_account_type: AccountType; from_account_id: string;
+  to_account_type: AccountType; to_account_id: string;
   recurrence_months: string; notes: string;
 }
 
@@ -34,18 +34,24 @@ export default function TransferForm({ onSuccess, initial }: Props) {
   const [editCascade, setEditCascade] = useState<'single' | 'future' | 'all'>('single');
   const { register, handleSubmit, watch, setValue } = useForm<Fields>({
     defaultValues: initial
-      ? { ...initial, amount: String(initial.amount), recurrence_months: String(initial.recurrence_months ?? ''), notes: initial.notes ?? '' }
+      ? {
+          date: initial.date, detail: initial.detail, amount: String(initial.amount),
+          from_account_type: initial.from_account_type,
+          from_account_id: initial.from_account_id ?? initial.from_payment_method_id ?? '',
+          to_account_type: initial.to_account_type,
+          to_account_id: initial.to_account_id ?? initial.to_payment_method_id ?? '',
+          recurrence_months: String(initial.recurrence_months ?? ''), notes: initial.notes ?? '',
+        }
       : { date: format(new Date(), 'yyyy-MM-dd'), from_account_type: 'bank', to_account_type: 'saving' },
   });
 
-  const currentYear = new Date().getFullYear();
   const { data: paymentMethods = [] } = useQuery({
     queryKey: ['payment-methods', 'active'],
     queryFn: () => paymentMethodsApi.list(),
   });
-  const { data: assets = [] } = useQuery({
-    queryKey: ['assets', currentYear],
-    queryFn: () => assetsApi.year(currentYear),
+  const { data: accounts = [] } = useQuery({
+    queryKey: ['accounts'],
+    queryFn: () => accountsApi.list(),
   });
 
   const fromType = watch('from_account_type');
@@ -56,24 +62,24 @@ export default function TransferForm({ onSuccess, initial }: Props) {
   const toMounted = useRef(false);
   useEffect(() => {
     if (!fromMounted.current) { fromMounted.current = true; return; }
-    setValue('from_account_name', ''); // eslint-disable-line react-hooks/exhaustive-deps
+    setValue('from_account_id', ''); // eslint-disable-line react-hooks/exhaustive-deps
   }, [fromType]);
   useEffect(() => {
     if (!toMounted.current) { toMounted.current = true; return; }
-    setValue('to_account_name', ''); // eslint-disable-line react-hooks/exhaustive-deps
+    setValue('to_account_id', ''); // eslint-disable-line react-hooks/exhaustive-deps
   }, [toType]);
 
   const accountNameOptions = (type: string): { value: string; label: string }[] => {
     if (type === 'bank') {
       const banks = paymentMethods.filter((m) => m.type === 'bank');
       if (banks.length === 0) return [{ value: '', label: '— no bank accounts —' }];
-      return banks.map((b) => ({ value: b.name, label: b.name }));
+      return banks.map((b) => ({ value: b.id, label: b.name }));
     }
-    const names = assets
-      .filter((a) => a.asset_type === type)
-      .map((a) => ({ value: a.asset_name, label: a.asset_name }));
-    if (names.length === 0) return [{ value: '', label: `— no ${type} accounts —` }];
-    return names;
+    const options = accounts
+      .filter((account) => account.type === type)
+      .map((account) => ({ value: account.id, label: account.name }));
+    if (options.length === 0) return [{ value: '', label: `— no ${type} accounts —` }];
+    return options;
   };
 
   const { mutate, isPending } = useMutation({
@@ -88,8 +94,8 @@ export default function TransferForm({ onSuccess, initial }: Props) {
       }
       return transfersApi.create({
         date: d.date, detail: d.detail, amount: parseFloat(d.amount),
-        from_account_type: d.from_account_type, from_account_name: d.from_account_name,
-        to_account_type: d.to_account_type, to_account_name: d.to_account_name,
+        from_account_type: d.from_account_type, from_account_id: d.from_account_id,
+        to_account_type: d.to_account_type, to_account_id: d.to_account_id,
         ...(d.recurrence_months ? { recurrence_months: parseInt(d.recurrence_months) } : {}),
         ...(d.notes ? { notes: d.notes } : {}),
       });
@@ -129,17 +135,17 @@ export default function TransferForm({ onSuccess, initial }: Props) {
         <>
           <Select label="From account type" options={ACCOUNT_TYPES} {...register('from_account_type')} />
           <Select
-            label="From account name"
+            label="From account"
             options={accountNameOptions(fromType)}
             required
-            {...register('from_account_name', { required: true })}
+            {...register('from_account_id', { required: true })}
           />
           <Select label="To account type" options={ACCOUNT_TYPES} {...register('to_account_type')} />
           <Select
-            label="To account name"
+            label="To account"
             options={accountNameOptions(toType)}
             required
-            {...register('to_account_name', { required: true })}
+            {...register('to_account_id', { required: true })}
           />
           <Input label="Repeat for N months" type="number" min="1" {...register('recurrence_months')} />
         </>

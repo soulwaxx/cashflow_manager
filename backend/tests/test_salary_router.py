@@ -16,6 +16,17 @@ def _make_user_and_login(client):
     client.post("/api/v1/auth/login", json={"email": "u@x.com", "password": "Password1!"})
 
 
+def _salary_payload(**overrides):
+    payload = {
+        "valid_from": "2026-01-01", "ral": 36000,
+        "employer_contrib_rate": 0.02, "voluntary_contrib_rate": 0.01,
+        "regional_tax_rate": 0.0173, "municipal_tax_rate": 0.001,
+        "meal_vouchers_annual": 0, "welfare_annual": 0,
+    }
+    payload.update(overrides)
+    return payload
+
+
 def test_create_salary_with_salary_months_13(client):
     _make_user_and_login(client)
     resp = client.post("/api/v1/salary", json={
@@ -32,6 +43,34 @@ def test_create_salary_with_salary_months_13(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["salary_months"] == 13
+
+
+def test_create_salary_after_onboarding_creates_pension_account_for_transfers_and_assets(client):
+    from tests.test_onboarding import WIZARD_PAYLOAD
+
+    client.post("/api/v1/auth/register", json={
+        "email": "post-onboarding@example.com", "password": "Password1!", "name": "Post onboarding",
+    })
+    assert client.post("/api/v1/onboarding", json={**WIZARD_PAYLOAD, "salary": None}).status_code == 200
+
+    assert client.post("/api/v1/salary", json=_salary_payload()).status_code == 200
+    pension = next(account for account in client.get("/api/v1/accounts").json() if account["type"] == "pension")
+    bank = next(method for method in client.get("/api/v1/payment-methods").json() if method["type"] == "bank")
+
+    transfer = client.post("/api/v1/transfers", json={
+        "date": "2026-03-01", "amount": 100,
+        "from_account_type": "bank", "from_account_id": bank["id"],
+        "to_account_type": "pension", "to_account_id": pension["id"],
+    })
+    assert transfer.status_code == 200
+    assert transfer.json()["to_account_id"] == pension["id"]
+
+    assets = client.get("/api/v1/assets/2026?as_of=2026-12-01")
+    assert assets.status_code == 200
+    assert next(asset for asset in assets.json() if asset["asset_type"] == "pension")["account_id"] == pension["id"]
+    assert client.put(
+        f"/api/v1/assets/2026/pension/{pension['id']}", json={"manual_override": 5000}
+    ).status_code == 200
 
 
 def test_calculate_endpoint_returns_english_field_names(client):
@@ -76,6 +115,37 @@ def test_preview_salary_returns_422_when_no_tax_config(client):
         "salary_months": 12,
     })
     assert r.status_code == 422
+
+
+def test_updating_zero_contributions_creates_one_user_owned_pension_account(client):
+    from tests.test_onboarding import WIZARD_PAYLOAD
+
+    client.post("/api/v1/auth/register", json={
+        "email": "alice-pension@example.com", "password": "Password1!", "name": "Alice",
+    })
+    zero_contribution_salary = {
+        **WIZARD_PAYLOAD["salary"], "employer_contrib_rate": 0, "voluntary_contrib_rate": 0,
+    }
+    assert client.post(
+        "/api/v1/onboarding", json={**WIZARD_PAYLOAD, "salary": zero_contribution_salary}
+    ).status_code == 200
+    salary_id = client.get("/api/v1/salary").json()[0]["id"]
+    assert not any(account["type"] == "pension" for account in client.get("/api/v1/accounts").json())
+
+    positive_contribution_salary = _salary_payload(employer_contrib_rate=0.02, voluntary_contrib_rate=0)
+    assert client.put(f"/api/v1/salary/{salary_id}", json=positive_contribution_salary).status_code == 200
+    assert client.put(f"/api/v1/salary/{salary_id}", json=positive_contribution_salary).status_code == 200
+    alice_pensions = [
+        account for account in client.get("/api/v1/accounts").json() if account["type"] == "pension"
+    ]
+    assert len(alice_pensions) == 1
+
+    assert client.post("/api/v1/auth/logout").status_code == 200
+    client.post("/api/v1/auth/register", json={
+        "email": "bob-pension@example.com", "password": "Password1!", "name": "Bob",
+    })
+    assert client.post("/api/v1/onboarding", json={**WIZARD_PAYLOAD, "salary": None}).status_code == 200
+    assert not any(account["type"] == "pension" for account in client.get("/api/v1/accounts").json())
 
 
 def test_update_salary(client):

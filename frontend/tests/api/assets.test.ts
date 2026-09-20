@@ -4,12 +4,15 @@ import { server } from '../mocks/server';
 import { assetsApi } from '../../src/api/assets';
 
 describe('assetsApi', () => {
-  it('year returns assets for a given year', async () => {
+  it('year returns assets for a given as-of month', async () => {
     const assets = [{ id: 'a-1', asset_type: 'stock', asset_name: 'AAPL', amount: 10000 }];
     server.use(
-      http.get('/api/v1/assets/2026', () => HttpResponse.json(assets))
+      http.get('/api/v1/assets/2026', ({ request }) => {
+        expect(new URL(request.url).searchParams.get('as_of')).toBe('2026-03-01');
+        return HttpResponse.json(assets);
+      })
     );
-    const result = await assetsApi.year(2026);
+    const result = await assetsApi.year(2026, '2026-03-01');
     expect(result).toEqual(assets);
   });
 

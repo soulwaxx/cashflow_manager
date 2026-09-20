@@ -14,7 +14,7 @@ CashFlow Manager is a self-hosted, multi-user personal-finance web app. The back
 6. Authentication is an `HttpOnly` JWT cookie. Almost every domain row is user-owned; authorization is enforced by filtering with the authenticated `user_id`, not by roles.
 7. Transactions store both occurrence `date` and derived first-of-month `billing_month`. Recurrences are materialized rows linked to a root by `parent_transaction_id`/`parent_transfer_id`; they are not schedules evaluated at read time.
 
-Production startup currently invokes migrations in both `start.sh` and FastAPI lifespan. Preserve this behavior unless migration ownership is deliberately changed and container startup is retested.
+FastAPI lifespan is the sole automatic migration owner. `start.sh` only launches Uvicorn; direct Alembic commands and concurrent app startups must not overlap against the same SQLite database.
 
 ## Directory ownership
 

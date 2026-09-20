@@ -229,6 +229,64 @@ def test_pm_rename_cascades_to_transfers(client):
         "Old PM name still present in transfers after rename"
 
 
+def test_bank_rename_updates_only_matching_bank_transfer_endpoints(client, db):
+    """A bank rename cannot rewrite same-named non-bank transfer snapshots."""
+    _setup(client)
+    from app.models.payment_method import PaymentMethod
+    from app.models.transfer import Transfer
+
+    methods = client.get("/api/v1/payment-methods").json()
+    bank_id = next(method["id"] for method in methods if method["name"] == "MyBank")
+    saving_id = client.post("/api/v1/accounts", json={
+        "type": "saving", "name": "MyBank", "opening_balance": 0,
+    }).json()["id"]
+    owner_id = db.get(PaymentMethod, bank_id).user_id
+
+    transfers = [
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="stable from", amount=1,
+            from_account_type="bank", from_account_name="MyBank", from_payment_method_id=bank_id,
+            to_account_type="saving", to_account_name="MyBank", to_account_id=saving_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="stable to", amount=1,
+            from_account_type="saving", from_account_name="MyBank", from_account_id=saving_id,
+            to_account_type="bank", to_account_name="MyBank", to_payment_method_id=bank_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="legacy from", amount=1,
+            from_account_type="bank", from_account_name="MyBank",
+            to_account_type="saving", to_account_name="MyBank", to_account_id=saving_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="legacy to", amount=1,
+            from_account_type="saving", from_account_name="MyBank", from_account_id=saving_id,
+            to_account_type="bank", to_account_name="MyBank",
+            billing_month="2026-03-01",
+        ),
+    ]
+    db.add_all(transfers)
+    db.commit()
+    transfer_ids = [transfer.id for transfer in transfers]
+
+    response = client.put(f"/api/v1/payment-methods/{bank_id}", json={"name": "RenamedBank"})
+    assert response.status_code == 200
+
+    db.expire_all()
+    stable_from, stable_to, legacy_from, legacy_to = [db.get(Transfer, transfer_id) for transfer_id in transfer_ids]
+    assert stable_from.from_account_name == "RenamedBank"
+    assert stable_from.to_account_name == "MyBank"
+    assert stable_to.from_account_name == "MyBank"
+    assert stable_to.to_account_name == "RenamedBank"
+    assert legacy_from.from_account_name == "RenamedBank"
+    assert legacy_from.to_account_name == "MyBank"
+    assert legacy_to.from_account_name == "MyBank"
+    assert legacy_to.to_account_name == "RenamedBank"
+
+
 def test_create_payment_method_invalid_type_returns_422(client):
     _setup(client)
     r = client.post("/api/v1/payment-methods", json={"name": "X", "type": "crypto"})

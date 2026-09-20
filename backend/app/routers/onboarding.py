@@ -4,6 +4,7 @@ from app.deps import get_db, get_current_user
 from app.models.user import User, UserSetting
 from app.models.payment_method import CardBankLinkHistory, MainBankHistory, PaymentMethod
 from app.models.category import Category
+from app.models.account import Account
 from app.models.salary import SalaryConfig
 from app.schemas.onboarding import OnboardingPayload
 from app.services.seed import DEFAULT_CATEGORIES
@@ -93,11 +94,17 @@ def submit_onboarding(
         if pmi.type == "prepaid" and pmi.opening_balance is not None:
             _set_setting(db, current_user.id, f"opening_bank_balance_{pm.id}", pmi.opening_balance)
 
-    # Saving / investment accounts
+    # Saving / investment accounts have stable owned identities.
     for sa in (payload.saving_accounts or []):
-        _set_setting(db, current_user.id, f"opening_saving_balance_{sa.name}", sa.opening_balance)
+        db.add(Account(
+            user_id=current_user.id, type="saving", name=sa.name,
+            opening_balance=sa.opening_balance,
+        ))
     for ia in (payload.investment_accounts or []):
-        _set_setting(db, current_user.id, f"opening_investment_balance_{ia.name}", ia.opening_balance)
+        db.add(Account(
+            user_id=current_user.id, type="investment", name=ia.name,
+            opening_balance=ia.opening_balance,
+        ))
 
     # Default categories (Saving/* start inactive — tracked via Transfers)
     for type_, sub_type in DEFAULT_CATEGORIES:
@@ -108,6 +115,10 @@ def submit_onboarding(
 
     # Salary (optional)
     if payload.salary:
+        if payload.salary.employer_contrib_rate > 0 or payload.salary.voluntary_contrib_rate > 0:
+            db.add(Account(
+                user_id=current_user.id, type="pension", name="Pension", opening_balance=0,
+            ))
         db.add(SalaryConfig(
             user_id=current_user.id,
             valid_from=payload.tracking_start_date,

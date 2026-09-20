@@ -30,6 +30,12 @@ class Transfer(Base):
     to_payment_method_id: Mapped[Optional[str]] = mapped_column(
         String(36), ForeignKey("payment_methods.id", ondelete="SET NULL"), nullable=True
     )
+    from_account_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    to_account_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

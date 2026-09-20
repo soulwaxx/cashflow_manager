@@ -32,7 +32,7 @@ cp ../.env.example .env
 mkdir -p data
 # Edit backend/.env and set DB_PATH=./data/cashflow.db
 
-# Start the dev server (lifespan applies migrations to DB_PATH)
+# Start the dev server (FastAPI lifespan applies migrations to DB_PATH)
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -130,7 +130,7 @@ npm run test:ui          # interactive mode
 
 ## Database Migrations
 
-> **Target-path caveat:** direct Alembic CLI commands currently read `sqlalchemy.url` from `backend/alembic.ini` (`/app/data/cashflow.db`) and do not honor `DB_PATH`. FastAPI lifespan overrides the URL and migrates the configured `DB_PATH`. Verify the target database before running any direct Alembic command.
+> **Migration ownership and target path:** FastAPI lifespan is the sole automatic migration owner and applies migrations before serving requests. Direct Alembic CLI commands resolve `DB_PATH` through the same application settings as FastAPI. Settings read `.env` from the process working directory, so commands run from `backend/` use `backend/.env`; alternatively export `DB_PATH` explicitly. Do not run a direct Alembic command or start multiple app processes concurrently against the same SQLite database.
 
 ```bash
 cd backend
@@ -192,7 +192,7 @@ cashflow-manager/
 ├── docker-compose.yml       ← Development multi-service setup
 ├── nginx.conf               ← Nginx config (used inside production image)
 ├── supervisord.conf         ← Process supervisor config (prod image)
-└── start.sh                 ← Container entrypoint (runs migrations then Uvicorn)
+└── start.sh                 ← Container entrypoint (launches Uvicorn; lifespan runs migrations)
 ```
 
 ---
