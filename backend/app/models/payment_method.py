@@ -25,6 +25,24 @@ class PaymentMethod(Base):
     has_stamp_duty: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0", nullable=False)
 
 
+class CardBankLinkHistory(Base):
+    __tablename__ = "card_bank_link_history"
+    __table_args__ = (
+        UniqueConstraint("card_payment_method_id", "valid_from", name="uq_card_bank_link_effective"),
+    )
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)
+    user_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    card_payment_method_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("payment_methods.id", ondelete="CASCADE"), index=True
+    )
+    linked_bank_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("payment_methods.id", ondelete="CASCADE")
+    )
+    valid_from: Mapped[str] = mapped_column(String(10))  # YYYY-MM-DD first of month
+
+
 class MainBankHistory(Base):
     __tablename__ = "main_bank_history"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=gen_uuid)

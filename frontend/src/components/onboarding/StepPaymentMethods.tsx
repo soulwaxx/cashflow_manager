@@ -17,7 +17,7 @@ export default function StepPaymentMethods() {
   const [linked, setLinked] = useState('');
 
   const add = () => {
-    if (!name) return;
+    if (!name || (isBankFundedCard && !linked)) return;
     setMethods((prev) => [...prev, { name, type, linked_bank_name: linked || undefined }]);
     setName('');
     setLinked('');
@@ -29,6 +29,7 @@ export default function StepPaymentMethods() {
   };
 
   const mainBankName = data.main_bank?.name;
+  const isBankFundedCard = type === 'debit_card' || type === 'credit_card' || type === 'revolving';
 
   return (
     <div className="flex flex-col gap-4">
@@ -45,8 +46,8 @@ export default function StepPaymentMethods() {
             {PM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
-        {(type === 'debit_card' || type === 'credit_card' || type === 'revolving') && mainBankName && (
-          <Input label="Linked bank" type="text" value={linked} onChange={(e) => setLinked(e.target.value)} placeholder={mainBankName} />
+        {isBankFundedCard && mainBankName && (
+          <Input label="Linked bank" type="text" required value={linked} onChange={(e) => setLinked(e.target.value)} placeholder={mainBankName} />
         )}
         <Button variant="secondary" type="button" onClick={add} className="self-end">Add</Button>
       </div>

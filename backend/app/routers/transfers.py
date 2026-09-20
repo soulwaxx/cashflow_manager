@@ -1,26 +1,55 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import Optional, Literal
 from dateutil.parser import parse as parse_date
 from dateutil.relativedelta import relativedelta
 from app.deps import get_db, get_current_user
-from app.models.user import User
+from app.models.user import User, UserSetting
 from app.models.transfer import Transfer
 from app.models.payment_method import PaymentMethod
+from app.models.salary import SalaryConfig
 from app.schemas.transfer import TransferCreate, TransferUpdate
 
 router = APIRouter(prefix="/transfers", tags=["transfers"])
 
 
-def _resolve_pm_id(db: Session, user_id: str, account_type: str, account_name: str) -> Optional[str]:
-    """Look up a PaymentMethod id by (user_id, name) when the account is a bank.
-    Returns None for non-bank account types (saving/investment/pension have no PM row)
-    or when no PM matches (defensive — name is user-editable).
-    """
-    if account_type != "bank" or not account_name:
+def _validate_account(
+    db: Session, user_id: str, account_type: str, account_name: str
+) -> Optional[str]:
+    """Validate a current user-owned account and return its bank payment-method id."""
+    if account_type == "bank":
+        pm = (
+            db.query(PaymentMethod)
+            .filter_by(user_id=user_id, name=account_name, type="bank", is_active=True)
+            .first()
+        )
+        if pm is None:
+            raise HTTPException(422, "Bank account not found or inactive")
+        return pm.id
+
+    if account_type in {"saving", "investment"}:
+        setting_key = f"opening_{account_type}_balance_{account_name}"
+        setting = db.query(UserSetting).filter_by(user_id=user_id, key=setting_key).first()
+        if setting is None:
+            raise HTTPException(422, f"{account_type.title()} account not found")
         return None
-    pm = db.query(PaymentMethod).filter_by(user_id=user_id, name=account_name).first()
-    return pm.id if pm else None
+
+    has_pension = (
+        db.query(SalaryConfig)
+        .filter(
+            SalaryConfig.user_id == user_id,
+            or_(
+                SalaryConfig.employer_contrib_rate > 0,
+                SalaryConfig.voluntary_contrib_rate > 0,
+            ),
+        )
+        .first()
+        is not None
+    )
+    if account_name != "Pension" or not has_pension:
+        raise HTTPException(422, "Pension account not found")
+    return None
 
 
 def _promote_transfer_series_root_if_needed(db: Session, user_id: str, transfer: Transfer) -> None:
@@ -76,8 +105,12 @@ def create_transfer(req: TransferCreate, current_user: User = Depends(get_curren
     tx_date = parse_date(req.date).date()
     bm = tx_date.replace(day=1)  # transfers always bill current month
 
-    from_pm_id = _resolve_pm_id(db, current_user.id, req.from_account_type, req.from_account_name)
-    to_pm_id = _resolve_pm_id(db, current_user.id, req.to_account_type, req.to_account_name)
+    from_pm_id = _validate_account(
+        db, current_user.id, req.from_account_type, req.from_account_name
+    )
+    to_pm_id = _validate_account(
+        db, current_user.id, req.to_account_type, req.to_account_name
+    )
 
     if req.recurrence_months:
         first = None

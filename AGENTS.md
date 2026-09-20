@@ -18,8 +18,8 @@ Production startup currently invokes migrations in both `start.sh` and FastAPI l
 
 ## Directory ownership
 
-- `backend/app/routers/`: transport, dependency injection, ownership checks, status codes. Keep multi-step financial rules in services when they are reused or independently testable.
-- `backend/app/schemas/`: request/response validation. Add cross-field validation here before invalid values reach financial services.
+- `backend/app/routers/`: transport, dependency injection, ownership checks, status codes, and small endpoint-specific request models. Keep multi-step financial rules in services when they are reused or independently testable.
+- `backend/app/schemas/`: shared and domain request/response models. Add cross-field validation here before invalid values reach financial services; router-local models are acceptable for small endpoint-only contracts.
 - `backend/app/services/`: billing, recurrence, bank balance, summaries, analytics, assets, salary/tax, forecasts, auth/OIDC, and seed logic.
 - `backend/app/models/`: ORM schema. Import every new model in `models/__init__.py` so tests and Alembic register it.
 - `backend/alembic/versions/`: ordered schema/data migrations. Model changes require a reviewed migration; do not use `Base.metadata.create_all()` as the production migration path.

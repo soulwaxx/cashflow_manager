@@ -56,6 +56,16 @@ def test_migration_head_creates_expected_schema():
             f"Expected SET NULL on payment_methods.linked_bank_id, got: {pm_link_fks[0]}"
         )
 
+        # card-bank link history — effective dates are unique per card
+        link_cols = {c["name"] for c in inspector.get_columns("card_bank_link_history")}
+        assert link_cols == {
+            "id", "user_id", "card_payment_method_id", "linked_bank_id", "valid_from",
+        }
+        link_unique_constraints = {
+            uc["name"] for uc in inspector.get_unique_constraints("card_bank_link_history")
+        }
+        assert "uq_card_bank_link_effective" in link_unique_constraints
+
         # forecasts — datetime columns
         forecast_cols = {c["name"]: c for c in inspector.get_columns("forecasts")}
         assert "created_at" in forecast_cols
@@ -90,6 +100,41 @@ def test_migration_head_creates_expected_schema():
         assert "ix_main_bank_history_user_id" in mbh_index_names, (
             f"ix_main_bank_history_user_id missing from main_bank_history. Found: {mbh_index_names}"
         )
+    finally:
+        os.unlink(db_path)
+
+
+def test_migration_013_backfills_current_card_links_from_previous_head():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cfg = _cfg(db_path)
+        command.upgrade(cfg, "012pm_link_set_null")
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, name) VALUES ('user-1', 'migration@example.com', 'Migration')"
+            )
+            connection.exec_driver_sql("""
+                INSERT INTO payment_methods
+                    (id, user_id, name, type, is_main_bank, is_active, has_stamp_duty)
+                VALUES ('bank-1', 'user-1', 'Bank', 'bank', 1, 1, 0)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO payment_methods
+                    (id, user_id, name, type, linked_bank_id, is_main_bank, is_active, has_stamp_duty)
+                VALUES ('card-1', 'user-1', 'Card', 'credit_card', 'bank-1', 0, 1, 0)
+            """)
+        command.upgrade(cfg, "head")
+        with engine.connect() as connection:
+            links = connection.exec_driver_sql("""
+                SELECT user_id, card_payment_method_id, linked_bank_id, valid_from
+                FROM card_bank_link_history
+            """).mappings().all()
+        assert links == [{
+            "user_id": "user-1", "card_payment_method_id": "card-1",
+            "linked_bank_id": "bank-1", "valid_from": "0001-01-01",
+        }]
     finally:
         os.unlink(db_path)
 

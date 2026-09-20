@@ -141,7 +141,10 @@ def test_analytics_payment_method_ids_filter(client):
     pm_id, cat_id = _setup(client)
 
     # Create a second payment method
-    r2 = client.post("/api/v1/payment-methods", json={"name": "SecondCard", "type": "credit_card"})
+    r2 = client.post(
+        "/api/v1/payment-methods",
+        json={"name": "SecondCard", "type": "credit_card", "linked_bank_id": pm_id},
+    )
     assert r2.status_code == 200
     pm2_id = r2.json()["id"]
 

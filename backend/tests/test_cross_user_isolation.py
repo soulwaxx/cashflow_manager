@@ -321,10 +321,10 @@ def _alice_salary(client):
     """Register Alice, onboard, create a salary config. Returns salary_id."""
     _register_and_onboard_alice(client)
     # First need a tax config for the period
-    client.post("/api/v1/tax-config", json={"valid_from": "2026-01"})
+    client.post("/api/v1/tax-config", json={"valid_from": "2026-01-01"})
     # Tax config creation may already exist from seed — ignore 409
     r = client.post("/api/v1/salary", json={
-        "valid_from": "2026-01",
+        "valid_from": "2026-01-01",
         "ral": 40000,
         "employer_contrib_rate": 0.0919,
     })
@@ -347,7 +347,7 @@ def test_salary_update_by_other_user_returns_404(client):
     salary_id = _alice_salary(client)
     _switch_to_bob(client)
     r = client.put(f"/api/v1/salary/{salary_id}", json={
-        "valid_from": "2026-01", "ral": 99999, "employer_contrib_rate": 0.0
+        "valid_from": "2026-01-01", "ral": 99999, "employer_contrib_rate": 0.0
     })
     assert r.status_code == 404
 

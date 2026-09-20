@@ -1,7 +1,9 @@
 from __future__ import annotations
 import datetime
-from pydantic import BaseModel, Field, field_validator
+from decimal import Decimal
 from typing import Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 AccountType = Literal["bank", "saving", "investment", "pension"]
 
@@ -17,7 +19,7 @@ def _validate_iso_date(v: str) -> str:
 class TransferCreate(BaseModel):
     date: str
     detail: str = ""
-    amount: float = Field(gt=0)
+    amount: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
     from_account_type: AccountType
     from_account_name: str
     to_account_type: AccountType
@@ -30,11 +32,28 @@ class TransferCreate(BaseModel):
     def validate_date(cls, v: str) -> str:
         return _validate_iso_date(v)
 
+    @field_validator("from_account_name", "to_account_name")
+    @classmethod
+    def validate_account_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Account name must not be blank")
+        return value
+
+    @model_validator(mode="after")
+    def reject_identical_endpoints(self) -> TransferCreate:
+        if (
+            self.from_account_type == self.to_account_type
+            and self.from_account_name == self.to_account_name
+        ):
+            raise ValueError("Transfer endpoints must be different accounts")
+        return self
+
 
 class TransferUpdate(BaseModel):
     date: Optional[str] = None
     detail: Optional[str] = None
-    amount: Optional[float] = Field(None, gt=0)
+    amount: Optional[Decimal] = Field(None, gt=0, max_digits=12, decimal_places=2)
     notes: Optional[str] = None
 
     @field_validator("date")

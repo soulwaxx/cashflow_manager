@@ -18,8 +18,10 @@ export default function BankBalanceCard({ summary, isLoading }: Props) {
           <span className="text-green-600 font-medium">+€{fmt(summary?.incomes ?? 0)}</span>
         </div>
         <div>
-          <span className="text-muted">Outcomes </span>
-          <span className="text-red-500 font-medium">-€{fmt(totalOutcomes)}</span>
+          <span className="text-muted">Purchases & payments </span>
+          <span className={`${totalOutcomes < 0 ? 'text-green-600' : 'text-red-500'} font-medium`}>
+            {totalOutcomes < 0 ? '+' : '-'}€{fmt(Math.abs(totalOutcomes))}
+          </span>
         </div>
         <div>
           <span className="text-muted">Transfers out </span>

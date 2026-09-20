@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 from tests.test_onboarding import WIZARD_PAYLOAD
 
@@ -219,7 +221,11 @@ def test_credit_on_credit_card_reduces_bank_balance(client, db):
         "tracking_start_date": "2026-01-01",
         "main_bank": {"name": "MainBank", "opening_balance": 1000.0},
     })
-    cc = client.post("/api/v1/payment-methods", json={"name": "MyCreditCard", "type": "credit_card"}).json()
+    bank_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MainBank")
+    cc = client.post(
+        "/api/v1/payment-methods",
+        json={"name": "MyCreditCard", "type": "credit_card", "linked_bank_id": bank_id},
+    ).json()
     from app.models.user import User
     user = db.query(User).filter_by(email="v@x.com").first()
     db.add(Transaction(
@@ -356,8 +362,12 @@ def test_compute_bank_balances_for_year_debit_and_transfers(_standalone_db, make
     db = _standalone_db
 
     pm = PaymentMethod(user_id=user.id, name="YearBank", type="bank", is_main_bank=True)
-    cc_pm = PaymentMethod(user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False)
-    db.add_all([pm, cc_pm])
+    db.add(pm)
+    db.flush()
+    cc_pm = PaymentMethod(
+        user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False, linked_bank_id=pm.id
+    )
+    db.add(cc_pm)
     db.flush()
 
     cat = Category(user_id=user.id, type="Housing", sub_type="Rent")
@@ -421,8 +431,12 @@ def test_bank_balance_cc_debit_reduces_bank_in_billing_month(_standalone_db, mak
     db = _standalone_db
 
     bank_pm = PaymentMethod(user_id=user.id, name="MyBank", type="bank", is_main_bank=True)
-    cc_pm = PaymentMethod(user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False)
-    db.add_all([bank_pm, cc_pm])
+    db.add(bank_pm)
+    db.flush()
+    cc_pm = PaymentMethod(
+        user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False, linked_bank_id=bank_pm.id
+    )
+    db.add(cc_pm)
     db.flush()
 
     cat = Category(user_id=user.id, type="Personal", sub_type="Food")
@@ -573,8 +587,12 @@ def test_compute_bank_balances_for_year_cc_debit_reduces_bank_in_billing_month(_
     db = _standalone_db
 
     bank_pm = PaymentMethod(user_id=user.id, name="MyBank", type="bank", is_main_bank=True)
-    cc_pm = PaymentMethod(user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False)
-    db.add_all([bank_pm, cc_pm])
+    db.add(bank_pm)
+    db.flush()
+    cc_pm = PaymentMethod(
+        user_id=user.id, name="MyCC", type="credit_card", is_main_bank=False, linked_bank_id=bank_pm.id
+    )
+    db.add(cc_pm)
     db.flush()
 
     cat = Category(user_id=user.id, type="Personal", sub_type="Food")
@@ -612,8 +630,12 @@ def test_bank_balance_debit_card_reduces_bank_balance(_standalone_db, make_user)
     db = _standalone_db
 
     bank_pm = PaymentMethod(user_id=user.id, name="MyBank", type="bank", is_main_bank=True)
-    dc_pm = PaymentMethod(user_id=user.id, name="MyDebit", type="debit_card", is_main_bank=False)
-    db.add_all([bank_pm, dc_pm])
+    db.add(bank_pm)
+    db.flush()
+    dc_pm = PaymentMethod(
+        user_id=user.id, name="MyDebit", type="debit_card", is_main_bank=False, linked_bank_id=bank_pm.id
+    )
+    db.add(dc_pm)
     db.flush()
 
     cat = Category(user_id=user.id, type="Personal", sub_type="Food")
@@ -635,9 +657,8 @@ def test_bank_balance_debit_card_reduces_bank_balance(_standalone_db, make_user)
     assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(989.0)
 
 
-def test_bank_balance_credit_on_main_bank_increases_balance(_standalone_db, make_user):
-    """direction='credit' recorded directly on the main bank PM (e.g. a refund)
-    must ADD to the balance, not subtract. Legacy rows may carry this combination."""
+def test_bank_balance_ignores_legacy_invalid_credit_on_main_bank(_standalone_db, make_user):
+    """A legacy bank/credit row has no effect because the shared matrix rejects it."""
     from app.services.bank_balance import compute_bank_balance
     from app.models.payment_method import PaymentMethod, MainBankHistory
     from app.models.user import UserSetting
@@ -667,7 +688,7 @@ def test_bank_balance_credit_on_main_bank_increases_balance(_standalone_db, make
     ))
     db.commit()
 
-    assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(1150.0)
+    assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(1000.0)
 
 
 def test_bank_balance_debit_card_refund_credits_bank(_standalone_db, make_user):
@@ -682,8 +703,12 @@ def test_bank_balance_debit_card_refund_credits_bank(_standalone_db, make_user):
     db = _standalone_db
 
     bank_pm = PaymentMethod(user_id=user.id, name="MyBank", type="bank", is_main_bank=True)
-    dc_pm = PaymentMethod(user_id=user.id, name="MyDebit", type="debit_card", is_main_bank=False)
-    db.add_all([bank_pm, dc_pm])
+    db.add(bank_pm)
+    db.flush()
+    dc_pm = PaymentMethod(
+        user_id=user.id, name="MyDebit", type="debit_card", is_main_bank=False, linked_bank_id=bank_pm.id
+    )
+    db.add(dc_pm)
     db.flush()
 
     cat = Category(user_id=user.id, type="Personal", sub_type="Food")
@@ -703,3 +728,207 @@ def test_bank_balance_debit_card_refund_credits_bank(_standalone_db, make_user):
     db.commit()
 
     assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(1025.0)
+
+
+@pytest.mark.parametrize("valid_from", ["2026-01-01", "2026-01-15"])
+def test_bank_balance_initializes_from_normalized_first_history_row(
+    _standalone_db, make_user, valid_from
+):
+    """A month-start or legacy mid-month history row opens its effective month."""
+    from app.models.payment_method import MainBankHistory, PaymentMethod
+    from app.models.transaction import Transaction
+    from app.models.user import UserSetting
+    from app.services.bank_balance import compute_bank_balance
+
+    user = make_user(email=f"history-{valid_from}@test.com")
+    db = _standalone_db
+    bank = PaymentMethod(user_id=user.id, name="Bank", type="bank", is_main_bank=True)
+    db.add(bank)
+    db.flush()
+    db.add_all([
+        UserSetting(user_id=user.id, key="tracking_start_date", value="2026-01-01"),
+        MainBankHistory(
+            user_id=user.id,
+            payment_method_id=bank.id,
+            valid_from=valid_from,
+            opening_balance=Decimal("1000.00"),
+        ),
+        Transaction(
+            user_id=user.id,
+            date="2026-01-20",
+            detail="Three cents",
+            amount=Decimal("0.10"),
+            payment_method_id=bank.id,
+            category_id=None,
+            transaction_direction="debit",
+            billing_month="2026-01-01",
+        ),
+        Transaction(
+            user_id=user.id,
+            date="2026-01-21",
+            detail="Three cents",
+            amount=Decimal("0.10"),
+            payment_method_id=bank.id,
+            category_id=None,
+            transaction_direction="debit",
+            billing_month="2026-01-01",
+        ),
+        Transaction(
+            user_id=user.id,
+            date="2026-01-22",
+            detail="Three cents",
+            amount=Decimal("0.10"),
+            payment_method_id=bank.id,
+            category_id=None,
+            transaction_direction="debit",
+            billing_month="2026-01-01",
+        ),
+    ])
+    db.commit()
+
+    assert compute_bank_balance(user.id, 2026, 1, db) == 999.7
+
+
+@pytest.mark.parametrize(
+    ("linked_bank", "expected_february_balance"),
+    [("second", 1875.0), ("first", 2000.0), (None, 2000.0)],
+)
+def test_bank_balance_routes_card_activity_only_to_its_linked_active_bank(
+    _standalone_db, make_user, linked_bank, expected_february_balance
+):
+    """Card activity follows linked_bank_id across a main-bank switch."""
+    from app.models.payment_method import MainBankHistory, PaymentMethod
+    from app.models.transaction import Transaction
+    from app.models.user import UserSetting
+    from app.services.bank_balance import compute_bank_balance
+
+    user = make_user(email=f"linked-{linked_bank}@test.com")
+    db = _standalone_db
+    first_bank = PaymentMethod(user_id=user.id, name="First", type="bank")
+    second_bank = PaymentMethod(user_id=user.id, name="Second", type="bank", is_main_bank=True)
+    db.add_all([first_bank, second_bank])
+    db.flush()
+    card = PaymentMethod(
+        user_id=user.id,
+        name="Card",
+        type="credit_card",
+        linked_bank_id={"first": first_bank.id, "second": second_bank.id}.get(linked_bank),
+    )
+    db.add(card)
+    db.flush()
+    db.add_all([
+        UserSetting(user_id=user.id, key="tracking_start_date", value="2026-01-01"),
+        MainBankHistory(
+            user_id=user.id,
+            payment_method_id=first_bank.id,
+            valid_from="2026-01-01",
+            opening_balance=Decimal("1000.00"),
+        ),
+        MainBankHistory(
+            user_id=user.id,
+            payment_method_id=second_bank.id,
+            valid_from="2026-02-01",
+            opening_balance=Decimal("2000.00"),
+        ),
+        Transaction(
+            user_id=user.id,
+            date="2026-01-20",
+            detail="Card purchase",
+            amount=Decimal("125.00"),
+            payment_method_id=card.id,
+            category_id=None,
+            transaction_direction="debit",
+            billing_month="2026-02-01",
+        ),
+    ])
+    db.commit()
+
+    assert compute_bank_balance(user.id, 2026, 1, db) == 1000.0
+    assert compute_bank_balance(user.id, 2026, 2, db) == expected_february_balance
+
+
+def test_api_card_relink_preserves_historical_balance_and_applies_new_billing_month(client, db):
+    """Relinking through the API keeps prior billing-month activity on its original bank."""
+    from app.models.payment_method import MainBankHistory
+    from app.services.bank_balance import compute_bank_balance
+
+    user = _setup(client, db)
+    methods = client.get("/api/v1/payment-methods").json()
+    card = next(pm for pm in methods if pm["name"] == "MyBank Debit")
+    second_bank = next(pm for pm in methods if pm["name"] == "SecondBank")
+    category_id = next(category["id"] for category in client.get("/api/v1/categories").json())
+
+    assert client.post("/api/v1/transactions", json={
+        "date": "2026-01-15", "detail": "January purchase", "amount": 100,
+        "payment_method_id": card["id"], "category_id": category_id,
+        "transaction_direction": "debit",
+    }).status_code == 200
+    assert client.put(f"/api/v1/payment-methods/{card['id']}", json={
+        "linked_bank_id": second_bank["id"], "effective_billing_month": "2026-02-01",
+    }).status_code == 200
+    db.add(MainBankHistory(
+        user_id=user.id, payment_method_id=second_bank["id"],
+        valid_from="2026-02-01", opening_balance=Decimal("2000.00"),
+    ))
+    db.commit()
+    assert client.post("/api/v1/transactions", json={
+        "date": "2026-02-15", "detail": "February purchase", "amount": 200,
+        "payment_method_id": card["id"], "category_id": category_id,
+        "transaction_direction": "debit",
+    }).status_code == 200
+
+    assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(4900.0)
+    assert compute_bank_balance(user.id, 2026, 2, db) == pytest.approx(1800.0)
+
+
+def test_card_relink_routes_each_billing_month_to_its_historical_bank(_standalone_db, make_user):
+    """A later card relink cannot rewrite the bank charged by earlier billing periods."""
+    from app.models.payment_method import CardBankLinkHistory, MainBankHistory, PaymentMethod
+    from app.models.transaction import Transaction
+    from app.models.user import UserSetting
+    from app.services.bank_balance import compute_bank_balance
+
+    user = make_user(email="card-link-history@test.com")
+    db = _standalone_db
+    first_bank = PaymentMethod(user_id=user.id, name="First", type="bank")
+    second_bank = PaymentMethod(user_id=user.id, name="Second", type="bank", is_main_bank=True)
+    db.add_all([first_bank, second_bank])
+    db.flush()
+    card = PaymentMethod(
+        user_id=user.id, name="Card", type="debit_card", linked_bank_id=second_bank.id
+    )
+    db.add(card)
+    db.flush()
+    db.add_all([
+        UserSetting(user_id=user.id, key="tracking_start_date", value="2026-01-01"),
+        MainBankHistory(
+            user_id=user.id, payment_method_id=first_bank.id,
+            valid_from="2026-01-01", opening_balance=Decimal("1000.00"),
+        ),
+        MainBankHistory(
+            user_id=user.id, payment_method_id=second_bank.id,
+            valid_from="2026-02-01", opening_balance=Decimal("2000.00"),
+        ),
+        CardBankLinkHistory(
+            user_id=user.id, card_payment_method_id=card.id,
+            linked_bank_id=first_bank.id, valid_from="0001-01-01",
+        ),
+        CardBankLinkHistory(
+            user_id=user.id, card_payment_method_id=card.id,
+            linked_bank_id=second_bank.id, valid_from="2026-02-01",
+        ),
+        Transaction(
+            user_id=user.id, date="2026-01-20", detail="January card purchase",
+            amount=Decimal("100.00"), payment_method_id=card.id, category_id=None,
+            transaction_direction="debit", billing_month="2026-01-01",
+        ),
+        Transaction(
+            user_id=user.id, date="2026-02-20", detail="February card purchase",
+            amount=Decimal("200.00"), payment_method_id=card.id, category_id=None,
+            transaction_direction="debit", billing_month="2026-02-01",
+        ),
+    ])
+    db.commit()
+
+    assert compute_bank_balance(user.id, 2026, 1, db) == pytest.approx(900.0)
+    assert compute_bank_balance(user.id, 2026, 2, db) == pytest.approx(1800.0)

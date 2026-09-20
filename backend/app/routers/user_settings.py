@@ -7,9 +7,8 @@ from app.models.user import User, UserSetting
 
 router = APIRouter(prefix="/user-settings", tags=["user-settings"])
 
+# Onboarding owns these invariants; settings writes must not make onboarding reusable.
 ALLOWED_SETTING_KEYS = frozenset({
-    "tracking_start_date",
-    "onboarding_complete",
     "theme",
 })
 

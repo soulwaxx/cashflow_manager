@@ -1,18 +1,13 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user
 from app.models.user import User, UserSetting
-from app.models.payment_method import PaymentMethod, MainBankHistory
+from app.models.payment_method import CardBankLinkHistory, MainBankHistory, PaymentMethod
 from app.models.category import Category
 from app.models.salary import SalaryConfig
-from app.models.transaction import Transaction
-from app.models.transfer import Transfer
-from app.models.asset import Asset
-from app.models.forecast import Forecast, ForecastLine, ForecastAdjustment
-from app.models.tax import TaxConfig
 from app.schemas.onboarding import OnboardingPayload
 from app.services.seed import DEFAULT_CATEGORIES
-from app.services.salary import calculate_salary
+from app.services.salary import SalaryCalculationError, calculate_salary
 from app.services.tax import resolve_tax_config
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -42,21 +37,18 @@ def submit_onboarding(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Idempotent — wipe and recreate per-user setup data
-    # Delete FK children before parents: MainBankHistory.payment_method_id → payment_methods.id
-    db.query(ForecastAdjustment).filter_by(user_id=current_user.id).delete()
-    db.query(ForecastLine).filter_by(user_id=current_user.id).delete()
-    db.query(Forecast).filter_by(user_id=current_user.id).delete()
-    db.query(Asset).filter_by(user_id=current_user.id).delete()
-    db.query(Transaction).filter(Transaction.user_id == current_user.id).delete()
-    db.query(Transfer).filter(Transfer.user_id == current_user.id).delete()
-    db.query(MainBankHistory).filter_by(user_id=current_user.id).delete()
-    db.query(PaymentMethod).filter_by(user_id=current_user.id).delete()
-    db.query(Category).filter_by(user_id=current_user.id).delete()
-    db.query(SalaryConfig).filter_by(user_id=current_user.id).delete()
-    db.query(TaxConfig).filter_by(user_id=current_user.id).delete()
-    db.query(UserSetting).filter_by(user_id=current_user.id).delete()
-    db.flush()
+    if _get_setting(db, current_user.id, "onboarding_complete") == "true":
+        raise HTTPException(status_code=409, detail="Onboarding has already been completed")
+
+    breakdown = None
+    if payload.salary:
+        tax_cfg = resolve_tax_config(db, payload.tracking_start_date[:7], current_user.id)
+        if not tax_cfg:
+            raise HTTPException(422, "No tax config found for the given period")
+        try:
+            breakdown = calculate_salary(payload.salary, tax_cfg)
+        except SalaryCalculationError as exc:
+            raise HTTPException(422, str(exc)) from exc
 
     _set_setting(db, current_user.id, "tracking_start_date", payload.tracking_start_date)
 
@@ -91,6 +83,13 @@ def submit_onboarding(
         )
         db.add(pm)
         db.flush()
+        if pmi.type in {"debit_card", "credit_card", "revolving"}:
+            db.add(CardBankLinkHistory(
+                user_id=current_user.id,
+                card_payment_method_id=pm.id,
+                linked_bank_id=linked_id,
+                valid_from=payload.tracking_start_date,
+            ))
         if pmi.type == "prepaid" and pmi.opening_balance is not None:
             _set_setting(db, current_user.id, f"opening_bank_balance_{pm.id}", pmi.opening_balance)
 
@@ -109,8 +108,6 @@ def submit_onboarding(
 
     # Salary (optional)
     if payload.salary:
-        tax_cfg = resolve_tax_config(db, payload.tracking_start_date[:7], current_user.id)
-        breakdown = calculate_salary(payload.salary, tax_cfg) if tax_cfg else None
         db.add(SalaryConfig(
             user_id=current_user.id,
             valid_from=payload.tracking_start_date,
@@ -123,7 +120,7 @@ def submit_onboarding(
             welfare_annual=payload.salary.welfare_annual,
             salary_months=payload.salary.salary_months,
             manual_net_override=payload.salary.manual_net_override,
-            computed_net_monthly=breakdown.net_monthly if breakdown else 0,
+            computed_net_monthly=breakdown.net_monthly,
         ))
 
     _set_setting(db, current_user.id, "onboarding_complete", "true")

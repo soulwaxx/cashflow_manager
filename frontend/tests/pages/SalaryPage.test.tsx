@@ -70,7 +70,7 @@ test('SalaryPage shows salary breakdown when period selected', async () => {
   expect(await screen.findByText(/inps/i)).toBeInTheDocument();
 });
 
-test('SalaryPage edit form does not send manual_net_override, preserving a stored override', async () => {
+test('SalaryPage shows and submits a stored manual override as the effective net', async () => {
   const user = userEvent.setup();
   let requestBody: unknown;
 
@@ -80,7 +80,7 @@ test('SalaryPage edit form does not send manual_net_override, preserving a store
         id: 'sc1', user_id: 'u1', valid_from: '2026-01-01', ral: 4000,
         employer_contrib_rate: 0.04, voluntary_contrib_rate: 0, regional_tax_rate: 0.0173,
         municipal_tax_rate: 0.001, meal_vouchers_annual: 0, welfare_annual: 0,
-        salary_months: 12, manual_net_override: 2750, computed_net_monthly: 2600,
+        salary_months: 12, manual_net_override: 2750, computed_net_monthly: 2600, effective_net_monthly: 2750,
       }])
     ),
     http.put('/api/v1/salary/sc1', async ({ request }) => {
@@ -89,7 +89,7 @@ test('SalaryPage edit form does not send manual_net_override, preserving a store
         id: 'sc1', user_id: 'u1', valid_from: '2026-01-01', ral: 4200,
         employer_contrib_rate: 0.04, voluntary_contrib_rate: 0, regional_tax_rate: 0.0173,
         municipal_tax_rate: 0.001, meal_vouchers_annual: 0, welfare_annual: 0,
-        salary_months: 12, manual_net_override: 2750, computed_net_monthly: 2600,
+        salary_months: 12, manual_net_override: 2750, computed_net_monthly: 2600, effective_net_monthly: 2750,
       });
     })
   );
@@ -103,5 +103,5 @@ test('SalaryPage edit form does not send manual_net_override, preserving a store
   await user.click(screen.getByRole('button', { name: /^save$/i }));
 
   await waitFor(() => expect(requestBody).toBeTruthy());
-  expect(requestBody).not.toHaveProperty('manual_net_override');
+  expect(requestBody).toHaveProperty('manual_net_override', 2750);
 });

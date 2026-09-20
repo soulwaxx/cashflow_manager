@@ -40,8 +40,8 @@ FastAPI with SQLAlchemy (SQLite) and Alembic for schema migrations.
 ### Layers
 
 ```
-routers/     ← HTTP boundary: request parsing, response serialization, auth guard
-schemas/     ← Pydantic I/O contracts (decoupled from ORM)
+routers/     ← HTTP boundary: request parsing, response serialization, auth guard; some small endpoint-specific Pydantic models are colocated here
+schemas/     ← Shared and domain Pydantic I/O contracts (decoupled from ORM)
 services/    ← Business logic (pure functions, take db session)
 models/      ← SQLAlchemy ORM models
 ```
@@ -78,6 +78,23 @@ User-supplied foreign references that point at user-owned rows are validated at 
 | `revolving` | Bills next month |
 | `prepaid` | Bills current month |
 | `cash` | Bills current month |
+
+Debit cards, credit cards, and revolving cards require an owned bank `linked_bank_id`. Their card-to-bank links are effective-dated by an explicit first-of-month billing period when relinked; each transaction uses the link active for its `billing_month`. Their cash impact is applied only when that historical linked bank is the effective main-bank history entry for the billing month; unlinked cards are rejected for new activity.
+
+### Transaction direction and cash-impact matrix
+
+`transaction_direction` is interpreted by payment-method type. The API rejects every combination not listed below. Summary outcomes are signed net purchases/payments, so a refund is negative; main-bank balance impact follows the indicated sign in the transaction billing month.
+
+| Payment method | Direction / UI term | Main-bank impact | Summary impact |
+|---|---|---:|---|
+| `bank` | `income` / Income | + amount | income + amount |
+| `bank` | `debit` / Purchase | - amount | outcome + amount |
+| `debit_card` | `debit` / Purchase | - amount | outcome + amount |
+| `debit_card` | `credit` / Refund | + amount | outcome - amount |
+| `credit_card`, `revolving` | `debit` / Purchase | - amount | outcome + amount |
+| `credit_card`, `revolving` | `credit` / Card payment | - amount | outcome + amount |
+| `prepaid`, `cash` | `income` / Income | no impact | income + amount |
+| `prepaid`, `cash` | `debit` / Purchase | no impact | outcome + amount |
 
 ### Routers (all under `/api/v1`)
 

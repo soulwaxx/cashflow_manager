@@ -10,8 +10,8 @@ These have no safe default and **must** be set in production.
 
 | Variable | Description | How to generate |
 |---|---|---|
-| `SECRET_KEY` | JWT signing key. Rotating this logs all users out. | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
-| `SESSION_ENCRYPTION_KEY` | AES-GCM key for encrypting OIDC `id_token` cookies. Rotating this invalidates all OIDC sessions. | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `SECRET_KEY` | JWT signing key. Must contain at least 32 bytes of cryptographically random data; rotating it logs all users out. | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
+| `SESSION_ENCRYPTION_KEY` | AES-GCM key for encrypting OIDC `id_token` cookies. Must be 64 hexadecimal characters (32 bytes) generated randomly; rotating it invalidates all OIDC sessions. | `python3 -c "import secrets; print(secrets.token_hex(32))"` |
 
 ---
 
@@ -75,6 +75,6 @@ See `deploy/.env.example` for the production template, or `.env.example` at the 
 
 ## Notes
 
-- All variables are optional except `SECRET_KEY` and `SESSION_ENCRYPTION_KEY` in production (without them the backend will raise a `ValueError` and fail to start unless `DEVELOPMENT_MODE=true`).
+- `SECRET_KEY` and `SESSION_ENCRYPTION_KEY` are required in production. The startup guard rejects missing/template values, low-entropy values, a `SECRET_KEY` shorter than 32 bytes, and malformed `SESSION_ENCRYPTION_KEY` values. `DEVELOPMENT_MODE=true` bypasses this guard for local development only.
 - `BASIC_AUTH_ENABLED` and `OIDC_ENABLED` can be toggled independently without data loss. OIDC users are matched by provider subject (`oidc_sub`); the backend does not auto-link them to an existing password-auth account by shared email.
 - Changing `TZ` does not retroactively shift stored timestamps; it affects how new timestamps and billing boundaries are computed.

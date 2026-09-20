@@ -25,6 +25,14 @@ export interface PaymentMethod {
   has_stamp_duty?: boolean;
 }
 
+export interface PaymentMethodUpdate {
+  name?: string;
+  is_active?: boolean;
+  linked_bank_id?: string | null;
+  effective_billing_month?: string;
+  has_stamp_duty?: boolean;
+}
+
 // Categories
 export interface Category {
   id: string;
@@ -106,6 +114,7 @@ export interface SalaryConfig {
   salary_months: number;
   manual_net_override: number | null;
   computed_net_monthly: number;
+  effective_net_monthly: number;
 }
 
 export interface SalaryBreakdown {

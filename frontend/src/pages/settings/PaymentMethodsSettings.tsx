@@ -36,6 +36,7 @@ export default function PaymentMethodsSettings() {
   const [editMethod, setEditMethod] = useState<PaymentMethod | null>(null);
   const [editName, setEditName] = useState('');
   const [editLinkedBankId, setEditLinkedBankId] = useState('');
+  const [editEffectiveBillingMonth, setEditEffectiveBillingMonth] = useState('');
   const [editHasStampDuty, setEditHasStampDuty] = useState(false);
 
   const { data: methods = [], isLoading } = useQuery({
@@ -54,8 +55,10 @@ export default function PaymentMethodsSettings() {
   });
 
   const { mutate: editMutate, isPending: editing } = useMutation({
-    mutationFn: ({ id, name, linked_bank_id, has_stamp_duty }: { id: string; name: string; linked_bank_id: string | null; has_stamp_duty?: boolean }) =>
-      paymentMethodsApi.update(id, { name, linked_bank_id: linked_bank_id || null, has_stamp_duty }),
+    mutationFn: ({ id, name, linked_bank_id, effective_billing_month, has_stamp_duty }: {
+      id: string; name: string; linked_bank_id?: string; effective_billing_month?: string; has_stamp_duty?: boolean;
+    }) =>
+      paymentMethodsApi.update(id, { name, linked_bank_id, effective_billing_month, has_stamp_duty }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['payment-methods'] });
       setEditMethod(null);
@@ -145,6 +148,7 @@ export default function PaymentMethodsSettings() {
                   setEditMethod(m);
                   setEditName(m.name);
                   setEditLinkedBankId(m.linked_bank_id ?? '');
+                  setEditEffectiveBillingMonth('');
                   setEditHasStampDuty(m.has_stamp_duty ?? false);
                 }}
               >
@@ -203,19 +207,15 @@ export default function PaymentMethodsSettings() {
             />
           )}
 
-          {isLinkable && bankMethods.length > 0 && (() => {
-            const bankOptions = [
-              { value: '', label: '— none —' },
-              ...bankMethods.map((b) => ({ value: b.id, label: b.name })),
-            ];
-            return (
-              <Select
-                label="Linked bank (optional)"
-                options={bankOptions}
-                {...register('linked_bank_id')}
-              />
-            );
-          })()}
+          {isLinkable && bankMethods.length > 0 && (
+            <Select
+              label="Linked bank"
+              options={bankMethods.map((b) => ({ value: b.id, label: b.name }))}
+              required
+              error={errors.linked_bank_id?.message}
+              {...register('linked_bank_id', { required: 'Linked bank is required for card payment methods' })}
+            />
+          )}
 
           {isCreditCard && (
             <label className="flex items-center gap-2 text-sm text-secondary cursor-pointer">
@@ -270,15 +270,25 @@ export default function PaymentMethodsSettings() {
             onChange={(e) => setEditName(e.target.value)}
           />
           {editMethod && LINKABLE_TYPES.includes(editMethod.type) && bankMethods.length > 0 && (
-            <Select
-              label="Linked bank (optional)"
-              options={[
-                { value: '', label: '— none —' },
-                ...bankMethods.map((b) => ({ value: b.id, label: b.name })),
-              ]}
-              value={editLinkedBankId}
-              onChange={(e) => setEditLinkedBankId(e.target.value)}
-            />
+            <>
+              <Select
+                label="Linked bank"
+                options={bankMethods.map((b) => ({ value: b.id, label: b.name }))}
+                required
+                value={editLinkedBankId}
+                onChange={(e) => setEditLinkedBankId(e.target.value)}
+              />
+              {editLinkedBankId !== editMethod.linked_bank_id && (
+                <Input
+                  label="New link effective billing month"
+                  type="date"
+                  required
+                  hint="The new bank applies from this first day of a billing month; earlier card activity stays with its historical bank."
+                  value={editEffectiveBillingMonth}
+                  onChange={(e) => setEditEffectiveBillingMonth(e.target.value)}
+                />
+              )}
+            </>
           )}
           {editMethod?.type === 'credit_card' && (
             <label className="flex items-center gap-2 text-sm text-secondary cursor-pointer">
@@ -293,16 +303,21 @@ export default function PaymentMethodsSettings() {
           )}
           <Button
             isLoading={editing}
-            disabled={!editName.trim()}
-            onClick={() =>
-              editMethod &&
+            disabled={!editName.trim() || (!!editMethod && LINKABLE_TYPES.includes(editMethod.type) && (!editLinkedBankId || (editLinkedBankId !== editMethod.linked_bank_id && !editEffectiveBillingMonth)))}
+            onClick={() => {
+              if (!editMethod) return;
+              const linkChanged = LINKABLE_TYPES.includes(editMethod.type)
+                && editLinkedBankId !== editMethod.linked_bank_id;
               editMutate({
                 id: editMethod.id,
                 name: editName,
-                linked_bank_id: editLinkedBankId || null,
+                ...(linkChanged ? {
+                  linked_bank_id: editLinkedBankId,
+                  effective_billing_month: editEffectiveBillingMonth,
+                } : {}),
                 has_stamp_duty: editMethod.type === 'credit_card' ? editHasStampDuty : undefined,
-              })
-            }
+              });
+            }}
           >
             Save changes
           </Button>

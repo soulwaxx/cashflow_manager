@@ -9,30 +9,9 @@ import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
 import type { Transaction, PaymentMethod } from '../../types/api';
+import { directionsForPaymentMethod } from '../../utils/transactionSemantics';
 
 const NEXT_MONTH_TYPES: PaymentMethod['type'][] = ['credit_card', 'revolving'];
-
-const ALL_DIRECTIONS = [
-  { value: 'debit', label: 'Expense' },
-  { value: 'income', label: 'Income' },
-  { value: 'credit', label: 'Credit (pay off card)' },
-] as const;
-
-function directionsForType(type: string | undefined) {
-  if (!type) return ALL_DIRECTIONS.slice(); // all options when no method selected
-  if (type === 'credit_card') {
-    // Credit card charges are always expenses; payoffs go through Transfers
-    return ALL_DIRECTIONS.filter((d) => d.value === 'debit');
-  }
-  if (type === 'revolving') {
-    return ALL_DIRECTIONS.filter((d) => d.value === 'debit' || d.value === 'credit');
-  }
-  if (type === 'debit_card') {
-    return ALL_DIRECTIONS.filter((d) => d.value === 'debit');
-  }
-  // bank, cash, prepaid → expense and income only
-  return ALL_DIRECTIONS.filter((d) => d.value !== 'credit');
-}
 
 interface Fields {
   date: string;
@@ -96,18 +75,18 @@ export default function TransactionForm({ onSuccess, initial }: Props) {
   const selectedMethodId = watch('payment_method_id');
   const selectedMethod = methods.find((m) => m.id === selectedMethodId);
   const isNextMonth = selectedMethod && NEXT_MONTH_TYPES.includes(selectedMethod.type);
-  const availableDirections = directionsForType(selectedMethod?.type);
+  const availableDirections = directionsForPaymentMethod(selectedMethod?.type);
   const directionIsFixed = availableDirections.length === 1;
 
   // Reset direction when payment method type changes to avoid submitting an invalid direction
   useEffect(() => {
     if (!selectedMethod) return;
-    const available = directionsForType(selectedMethod.type);
+    const available = directionsForPaymentMethod(selectedMethod.type);
     const current = watch('transaction_direction');
     if (available.length === 1) {
-      setValue('transaction_direction', available[0].value as Transaction['transaction_direction']);
-    } else if (!available.find((d) => d.value === current)) {
-      setValue('transaction_direction', available[0].value as Transaction['transaction_direction']);
+      setValue('transaction_direction', available[0].direction);
+    } else if (!available.find((d) => d.direction === current)) {
+      setValue('transaction_direction', available[0].direction);
     }
   }, [selectedMethod?.type]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -257,8 +236,8 @@ export default function TransactionForm({ onSuccess, initial }: Props) {
       {!isEditing && !directionIsFixed && (
         <Select
           label="Direction"
-          hint="Expense: money going out. Income: money coming in."
-          options={availableDirections}
+          hint="Purchase and card payment reduce cash; a debit-card refund restores it."
+          options={availableDirections.map(({ direction, label }) => ({ value: direction, label }))}
           required
           {...register('transaction_direction')}
         />

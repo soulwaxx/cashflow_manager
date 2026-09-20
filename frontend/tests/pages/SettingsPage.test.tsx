@@ -61,6 +61,34 @@ test('CategoriesSettings marks inactive categories and offers a Reactivate actio
   expect(within(activeRow).getByRole('button', { name: /deactivate/i })).toBeInTheDocument();
 });
 
+test('PaymentMethodsSettings submits an explicit effective billing month when relinking a card', async () => {
+  const user = userEvent.setup();
+  let requestBody: unknown;
+  server.use(
+    http.get('/api/v1/payment-methods', () => HttpResponse.json([
+      { id: 'bank1', name: 'First Bank', type: 'bank', is_main_bank: true, linked_bank_id: null, opening_balance: 5000, is_active: true },
+      { id: 'bank2', name: 'Second Bank', type: 'bank', is_main_bank: false, linked_bank_id: null, opening_balance: 0, is_active: true },
+      { id: 'card1', name: 'Card', type: 'credit_card', is_main_bank: false, linked_bank_id: 'bank1', opening_balance: null, is_active: true },
+    ])),
+    http.put('/api/v1/payment-methods/card1', async ({ request }) => {
+      requestBody = await request.json();
+      return HttpResponse.json({ id: 'card1', name: 'Card', type: 'credit_card', linked_bank_id: 'bank2', is_active: true });
+    }),
+  );
+
+  render(<PaymentMethodsSettings />, { wrapper });
+  await screen.findByText('Card');
+  const cardRow = screen.getByText('Card').closest('li')!;
+  await user.click(within(cardRow).getByRole('button', { name: /^edit$/i }));
+  await user.selectOptions(screen.getByLabelText(/^linked bank/i), 'bank2');
+  await user.type(screen.getByLabelText(/new link effective billing month/i), '2026-03-01');
+  await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+  await waitFor(() => expect(requestBody).toMatchObject({
+    linked_bank_id: 'bank2', effective_billing_month: '2026-03-01',
+  }));
+});
+
 test('CategoriesSettings reactivates a deactivated category', async () => {
   const user = userEvent.setup();
   let requestBody: unknown;

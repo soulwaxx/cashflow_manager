@@ -163,8 +163,8 @@ cashflow-manager/
 │   │   ├── database.py      ← SQLAlchemy engine + session factory
 │   │   ├── deps.py          ← FastAPI dependencies
 │   │   ├── models/          ← SQLAlchemy ORM models
-│   │   ├── routers/         ← HTTP route handlers
-│   │   ├── schemas/         ← Pydantic request/response schemas
+│   │   ├── routers/         ← HTTP handlers and small endpoint-specific request models
+│   │   ├── schemas/         ← Shared and domain Pydantic request/response models
 │   │   └── services/        ← Business logic
 │   ├── alembic/             ← Migration scripts
 │   ├── tests/               ← pytest test suite
