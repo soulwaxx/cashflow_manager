@@ -8,9 +8,12 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, inspect
+from sqlalchemy.orm import Session
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
+
+from app.services.bank_balance import compute_bank_balance
 
 
 def _cfg(db_path: str) -> Config:
@@ -192,6 +195,168 @@ def test_migration_013_backfills_current_card_links_from_previous_head():
             "linked_bank_id": "bank-1", "valid_from": "0001-01-01",
         }]
     finally:
+        os.unlink(db_path)
+
+
+def test_migration_backfills_implicit_legacy_card_links_without_changing_bank_balances():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cfg = _cfg(db_path)
+        command.upgrade(cfg, "012pm_link_set_null")
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, name) VALUES ('user-1', 'migration@example.com', 'Migration')"
+            )
+            connection.exec_driver_sql("""
+                INSERT INTO user_settings (user_id, key, value)
+                VALUES ('user-1', 'tracking_start_date', '2026-01-01')
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO payment_methods
+                    (id, user_id, name, type, is_main_bank, is_active, has_stamp_duty)
+                VALUES
+                    ('bank-1', 'user-1', 'First bank', 'bank', 0, 1, 0),
+                    ('bank-2', 'user-1', 'Second bank', 'bank', 1, 1, 0),
+                    ('credit-1', 'user-1', 'Legacy credit', 'credit_card', 0, 1, 0),
+                    ('debit-1', 'user-1', 'Legacy debit', 'debit_card', 0, 1, 0)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO main_bank_history
+                    (id, user_id, payment_method_id, valid_from, opening_balance)
+                VALUES
+                    ('history-1', 'user-1', 'bank-1', '2026-01-01', 1000),
+                    ('history-2', 'user-1', 'bank-2', '2026-03-01', 500)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO categories (id, user_id, type, sub_type, is_active)
+                VALUES ('category-1', 'user-1', 'Housing', 'Rent', 1)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO transactions
+                    (id, user_id, date, detail, amount, payment_method_id, category_id,
+                     transaction_direction, billing_month)
+                VALUES
+                    ('transaction-1', 'user-1', '2025-12-15', 'Credit purchase', 100,
+                     'credit-1', 'category-1', 'debit', '2026-01-01'),
+                    ('transaction-2', 'user-1', '2026-03-15', 'Debit purchase', 50,
+                     'debit-1', 'category-1', 'debit', '2026-03-01')
+            """)
+
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as connection:
+            links = connection.exec_driver_sql("""
+                SELECT card_payment_method_id, linked_bank_id, valid_from
+                FROM card_bank_link_history
+                ORDER BY card_payment_method_id, valid_from
+            """).mappings().all()
+            assert links == [
+                {'card_payment_method_id': 'credit-1', 'linked_bank_id': 'bank-1', 'valid_from': '2026-01-01'},
+                {'card_payment_method_id': 'credit-1', 'linked_bank_id': 'bank-2', 'valid_from': '2026-03-01'},
+                {'card_payment_method_id': 'debit-1', 'linked_bank_id': 'bank-1', 'valid_from': '2026-01-01'},
+                {'card_payment_method_id': 'debit-1', 'linked_bank_id': 'bank-2', 'valid_from': '2026-03-01'},
+            ]
+            current_links = connection.exec_driver_sql("""
+                SELECT id, linked_bank_id FROM payment_methods
+                WHERE id IN ('credit-1', 'debit-1') ORDER BY id
+            """).mappings().all()
+            assert current_links == [
+                {'id': 'credit-1', 'linked_bank_id': 'bank-2'},
+                {'id': 'debit-1', 'linked_bank_id': 'bank-2'},
+            ]
+
+        with Session(engine) as session:
+            assert compute_bank_balance('user-1', 2026, 1, session) == 900.0
+            assert compute_bank_balance('user-1', 2026, 3, session) == 450.0
+
+        command.downgrade(cfg, "015account_identities")
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT COUNT(*) FROM card_bank_link_history"
+            ).scalar_one() == 0
+            assert connection.exec_driver_sql("""
+                SELECT COUNT(*) FROM payment_methods
+                WHERE id IN ('credit-1', 'debit-1') AND linked_bank_id IS NULL
+            """).scalar_one() == 2
+
+        command.upgrade(cfg, "head")
+        with Session(engine) as session:
+            assert compute_bank_balance('user-1', 2026, 1, session) == 900.0
+            assert compute_bank_balance('user-1', 2026, 3, session) == 450.0
+    finally:
+        engine.dispose()
+        os.unlink(db_path)
+
+
+def test_migration_removes_orphaned_financial_rows_without_touching_owned_data():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cfg = _cfg(db_path)
+        command.upgrade(cfg, "016legacy_card_links")
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, name) VALUES ('user-1', 'migration@example.com', 'Migration')"
+            )
+            connection.exec_driver_sql("""
+                INSERT INTO salary_config
+                    (id, user_id, valid_from, ral, employer_contrib_rate, voluntary_contrib_rate)
+                VALUES
+                    ('salary-owned', 'user-1', '2026-01-01', 60000, 0.02, 0.01),
+                    ('salary-orphan', 'deleted-user', '2026-01-01', 60000, 0.02, 0.01)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO accounts
+                    (id, user_id, type, name, opening_balance, is_active)
+                VALUES
+                    ('account-owned', 'user-1', 'investment', 'Owned', 1000, 1),
+                    ('account-orphan', 'deleted-user', 'pension', 'Pension', 0, 1)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO assets
+                    (id, user_id, year, asset_type, asset_name, account_id, manual_override)
+                VALUES
+                    ('asset-owned', 'user-1', 2026, 'investment', 'Owned', 'account-owned', 1200),
+                    ('asset-cross-reference', 'user-1', 2026, 'pension', 'Pension', 'account-orphan', 500),
+                    ('asset-orphan', 'deleted-user', 2026, 'pension', 'Pension', 'account-orphan', 500)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO transfers
+                    (id, user_id, date, detail, amount, from_account_type, from_account_name,
+                     to_account_type, to_account_name, billing_month, from_account_id)
+                VALUES
+                    ('transfer-cross-reference', 'user-1', '2026-01-01', 'Transfer', 100,
+                     'pension', 'Pension', 'investment', 'Owned', '2026-01-01', 'account-orphan')
+            """)
+
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT id FROM salary_config ORDER BY id"
+            ).scalars().all() == ['salary-owned']
+            assert connection.exec_driver_sql(
+                "SELECT id FROM assets ORDER BY id"
+            ).scalars().all() == ['asset-cross-reference', 'asset-owned']
+            assert connection.exec_driver_sql("""
+                SELECT id, account_id FROM assets WHERE id = 'asset-cross-reference'
+            """).mappings().one() == {
+                'id': 'asset-cross-reference', 'account_id': None,
+            }
+            assert connection.exec_driver_sql("""
+                SELECT id, from_account_id FROM transfers WHERE id = 'transfer-cross-reference'
+            """).mappings().one() == {
+                'id': 'transfer-cross-reference', 'from_account_id': None,
+            }
+            assert connection.exec_driver_sql(
+                "SELECT id FROM accounts ORDER BY id"
+            ).scalars().all() == ['account-owned']
+            assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
+    finally:
+        engine.dispose()
         os.unlink(db_path)
 
 
