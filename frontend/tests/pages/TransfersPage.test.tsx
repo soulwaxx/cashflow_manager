@@ -81,6 +81,38 @@ test('TransfersPage opens add form', async () => {
   expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
 
+test('Transfer creation submits stable account IDs', async () => {
+  const user = userEvent.setup();
+  let requestBody: unknown;
+  server.use(
+    http.get('/api/v1/accounts', () => HttpResponse.json([
+      { id: 'saving-1', user_id: 'u1', type: 'saving', name: 'Savings', opening_balance: 1000, is_active: true },
+    ])),
+    http.post('/api/v1/transfers', async ({ request }) => {
+      requestBody = await request.json();
+      return HttpResponse.json(mockTransfers[0]);
+    })
+  );
+
+  render(<TransfersPage />, { wrapper });
+  await user.click(await screen.findByRole('button', { name: /add transfer/i }));
+  await user.type(screen.getByLabelText(/^detail/i), 'Stable transfer');
+  await user.type(screen.getByLabelText(/^amount/i), '100');
+  await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(4));
+  const selects = screen.getAllByRole('combobox');
+  await user.selectOptions(selects[1], 'pm1');
+  await user.selectOptions(selects[3], 'saving-1');
+  await user.click(screen.getByRole('button', { name: /^add transfer$/i }));
+
+  await waitFor(() => expect(requestBody).toEqual(expect.objectContaining({
+    from_account_type: 'bank', from_account_id: 'pm1',
+    to_account_type: 'saving', to_account_id: 'saving-1',
+  })));
+  expect(requestBody).not.toHaveProperty('from_account_name');
+  expect(requestBody).not.toHaveProperty('to_account_name');
+});
+
+
 test('Transfer edit form only exposes backend-supported fields', async () => {
   const user = userEvent.setup();
   let requestBody: unknown;

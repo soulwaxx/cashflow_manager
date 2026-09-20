@@ -40,4 +40,7 @@ export const handlers = [
   http.get('/api/v1/payment-methods', () =>
     HttpResponse.json([])
   ),
+  http.get('/api/v1/accounts', () =>
+    HttpResponse.json([])
+  ),
 ];

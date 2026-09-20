@@ -56,6 +56,32 @@ jobs:
         run: python -m pytest --cov --cov-report=term-missing
         working-directory: backend
 
+      - name: Verify fresh schema matches ORM metadata
+        run: |
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "$tmpdir"' EXIT
+          config_path="$tmpdir/alembic.ini"
+          db_path="$tmpdir/schema.db"
+          cp backend/alembic.ini "$config_path"
+          export config_path db_path DB_PATH="$db_path"
+          python - <<'PY'
+          import configparser
+          import os
+
+          parser = configparser.ConfigParser()
+          parser.read(os.environ["config_path"])
+          backend_dir = os.path.abspath("backend")
+          parser.set("alembic", "script_location", os.path.join(backend_dir, "alembic"))
+          parser.set("alembic", "prepend_sys_path", backend_dir)
+          with open(os.environ["config_path"], "w") as config_file:
+              parser.write(config_file)
+          PY
+          (
+            cd backend
+            alembic -c "$config_path" upgrade head
+            alembic -c "$config_path" check
+          )
+
   frontend-tests:
     name: Frontend tests
     runs-on: ubuntu-latest

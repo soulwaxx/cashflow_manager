@@ -73,7 +73,7 @@ def test_salary_api_calculate_returns_breakdown(client):
         "email": "alice@example.com", "password": "Password1!", "name": "Alice"
     })
     r = client.get("/api/v1/salary/calculate", params={
-        "as_of": "2026-01", "ral": 42000,
+        "as_of": "2026-01-01", "ral": 42000,
         "employer_contrib_rate": 0.04, "voluntary_contrib_rate": 0.02,
         "regional_tax_rate": 0.0173, "municipal_tax_rate": 0.008,
     })

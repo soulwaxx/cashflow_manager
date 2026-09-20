@@ -25,6 +25,14 @@ export interface PaymentMethod {
   has_stamp_duty?: boolean;
 }
 
+export interface PaymentMethodUpdate {
+  name?: string;
+  is_active?: boolean;
+  linked_bank_id?: string | null;
+  effective_billing_month?: string;
+  has_stamp_duty?: boolean;
+}
+
 // Categories
 export interface Category {
   id: string;
@@ -53,6 +61,21 @@ export interface Transaction {
 }
 
 // Transfers
+export interface Account {
+  id: string;
+  user_id: string;
+  type: 'saving' | 'investment' | 'pension';
+  name: string;
+  opening_balance: number;
+  is_active: boolean;
+}
+
+export interface AccountCreate {
+  type: 'saving' | 'investment';
+  name: string;
+  opening_balance?: number;
+}
+
 export interface Transfer {
   id: string;
   user_id: string;
@@ -60,8 +83,12 @@ export interface Transfer {
   detail: string;
   amount: number;
   from_account_type: 'bank' | 'saving' | 'investment' | 'pension';
+  from_account_id: string | null;
+  from_payment_method_id: string | null;
   from_account_name: string;
   to_account_type: 'bank' | 'saving' | 'investment' | 'pension';
+  to_account_id: string | null;
+  to_payment_method_id: string | null;
   to_account_name: string;
   billing_month: string;
   recurrence_months: number | null;
@@ -86,6 +113,7 @@ export interface MonthlySummary {
 export interface Asset {
   asset_type: 'saving' | 'investment' | 'pension' | 'bank';
   asset_name: string;
+  account_id: string | null;
   computed_amount: number;
   manual_override: number | null;
   final_amount: number;
@@ -106,6 +134,7 @@ export interface SalaryConfig {
   salary_months: number;
   manual_net_override: number | null;
   computed_net_monthly: number;
+  effective_net_monthly: number;
 }
 
 export interface SalaryBreakdown {

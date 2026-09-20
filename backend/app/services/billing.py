@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 
 CURRENT_MONTH_TYPES = {"bank", "debit_card", "prepaid", "cash"}
 NEXT_MONTH_TYPES = {"credit_card", "revolving"}
+BANK_FUNDED_CARD_TYPES = NEXT_MONTH_TYPES | {"debit_card"}
 
 
 def billing_month(payment_method_type: str, transaction_date: date) -> date:

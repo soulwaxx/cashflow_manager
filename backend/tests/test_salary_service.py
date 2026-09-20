@@ -1,5 +1,5 @@
 import pytest
-from app.services.salary import calculate_salary, SalaryBreakdown
+from app.services.salary import SalaryCalculationError, calculate_salary, SalaryBreakdown
 
 
 class _Tax:
@@ -105,6 +105,61 @@ def test_pension_deductible_capped():
         ral = 60000.0
     result = calculate_salary(_HighPension(), _Tax())
     assert result.pension_deductible == pytest.approx(5300.0)
+
+
+def test_calculation_uses_decimal_golden_values():
+    """Independent hand calculation for the standard 2026 tax table."""
+    result = calculate_salary(_Salary(), _Tax())
+
+    assert result.social_security == 2757.00
+    assert result.pension_deductible == 900.00
+    assert result.income_tax_gross == 6058.89
+    assert result.net_monthly == 1871.98
+
+
+def test_legacy_invalid_tax_config_raises_controlled_error():
+    class _UnsafeTax(_Tax):
+        employment_deduction_band2_range = 0
+
+    with pytest.raises(SalaryCalculationError, match="ranges must be positive"):
+        calculate_salary(_Salary(), _UnsafeTax())
+
+
+def test_contributions_cannot_produce_negative_taxable_base():
+    class _ExcessiveContributions(_Salary):
+        ral = 100
+        employer_contrib_rate = 1
+        voluntary_contrib_rate = 1
+        regional_tax_rate = 1
+        municipal_tax_rate = 1
+
+    with pytest.raises(SalaryCalculationError, match="contributions must not exceed"):
+        calculate_salary(_ExcessiveContributions(), _Tax())
+
+
+def test_capped_pension_deduction_that_produces_negative_net_raises():
+    class _FullVoluntaryContribution(_Salary):
+        ral = 36000
+        employer_contrib_rate = 0
+        voluntary_contrib_rate = 1
+        regional_tax_rate = 0
+        municipal_tax_rate = 0
+
+    with pytest.raises(SalaryCalculationError, match="Computed net annual salary"):
+        calculate_salary(_FullVoluntaryContribution(), _Tax())
+
+
+def test_zero_taxable_base_is_allowed_at_contribution_boundary():
+    class _BoundaryContributions(_Salary):
+        ral = 100
+        employer_contrib_rate = 0.9081
+        voluntary_contrib_rate = 0
+
+    result = calculate_salary(_BoundaryContributions(), _Tax())
+
+    assert result.taxable_base == 0
+    assert result.regional_surtax == 0
+    assert result.municipal_surtax == 0
 
 
 def test_net_monthly_is_rounded_to_2dp():

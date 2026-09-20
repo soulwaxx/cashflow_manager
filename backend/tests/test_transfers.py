@@ -299,17 +299,18 @@ def test_transfers_list_returns_all_without_explicit_limit(client):
     """Default list must return all transfers when no limit is specified."""
     client.post("/api/v1/auth/register", json={"email": "u@x.com", "password": "Password1!", "name": "U"})
     client.post("/api/v1/auth/login", json={"email": "u@x.com", "password": "Password1!"})
+    client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
 
-    # Create 55 transfers
+    # Create 55 transfers between owned accounts.
     for i in range(55):
         r = client.post("/api/v1/transfers", json={
             "date": "2026-03-01",
             "detail": f"Transfer {i}",
             "amount": 10,
             "from_account_type": "bank",
-            "from_account_name": f"Bank{i}",
+            "from_account_name": "MyBank",
             "to_account_type": "saving",
-            "to_account_name": f"Savings{i}",
+            "to_account_name": "MySavings",
         })
         assert r.status_code == 200
 
@@ -370,3 +371,115 @@ def test_create_transfer_invalid_date_returns_422(client):
         "to_account_type": "saving", "to_account_name": "MySavings",
     })
     assert r.status_code == 422
+
+
+def test_create_transfer_rejects_identical_endpoints(client):
+    _setup(client)
+
+    response = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "bank", "to_account_name": "MyBank",
+    })
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("account_type", "account_name"),
+    [
+        ("bank", "MissingBank"),
+        ("saving", "MissingSavings"),
+        ("investment", "MissingBroker"),
+        ("pension", "MissingPension"),
+    ],
+)
+def test_create_transfer_rejects_phantom_account(client, account_type, account_name):
+    _setup(client)
+
+    response = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": account_type, "from_account_name": account_name,
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    })
+
+    assert response.status_code == 422
+
+
+def test_create_transfer_rejects_inactive_bank_account(client):
+    _setup(client)
+    bank = client.post("/api/v1/payment-methods", json={
+        "name": "ClosedBank", "type": "bank",
+    }).json()
+    assert client.put(f"/api/v1/payment-methods/{bank['id']}", json={"is_active": False}).status_code == 200
+
+    response = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "ClosedBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    })
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("field", ["from_account_name", "to_account_name"])
+def test_create_transfer_rejects_blank_account_name(client, field):
+    _setup(client)
+    payload = {
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    }
+    payload[field] = "   "
+
+    response = client.post("/api/v1/transfers", json=payload)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("field", ["from_account_name", "to_account_name"])
+def test_create_transfer_rejects_account_name_over_255_characters(client, field):
+    _setup(client)
+    payload = {
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    }
+    payload[field] = "a" * 256
+
+    response = client.post("/api/v1/transfers", json=payload)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("amount", [0, -1, "NaN", "Infinity", "1.001", "10000000000"])
+def test_create_transfer_rejects_invalid_amount(client, amount):
+    _setup(client)
+
+    response = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": amount,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    })
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("account_type", "account_name"),
+    [
+        ("saving", "MySavings"),
+        ("investment", "MyBroker"),
+        ("pension", "Pension"),
+    ],
+)
+def test_create_transfer_accepts_owned_account_types(client, account_type, account_name):
+    _setup(client)
+
+    response = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": 50,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": account_type, "to_account_name": account_name,
+    })
+
+    assert response.status_code == 200

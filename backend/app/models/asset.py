@@ -14,5 +14,8 @@ class Asset(Base):
     year: Mapped[int] = mapped_column(Integer)
     asset_type: Mapped[str] = mapped_column(String(20))
     asset_name: Mapped[str] = mapped_column(String(255))
+    account_id: Mapped[Optional[str]] = mapped_column(
+        String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
     manual_override: Mapped[Optional[float]] = mapped_column(Numeric(12, 2), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

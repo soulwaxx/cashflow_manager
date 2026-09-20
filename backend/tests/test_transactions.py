@@ -154,6 +154,35 @@ def test_create_transaction_invalid_payment_method(client):
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("recurrence_months", [None, 3], ids=["single", "recurring"])
+def test_create_transaction_rejects_inactive_payment_method_without_persisting(
+    client, db, recurrence_months
+):
+    _, category_id = _setup(client)
+    from app.models.payment_method import PaymentMethod
+    from app.models.transaction import Transaction
+    from app.models.user import User
+
+    user = db.query(User).filter_by(email="alice@example.com").one()
+    card = db.query(PaymentMethod).filter_by(user_id=user.id, name="MyCard").one()
+    linked_bank = db.query(PaymentMethod).filter_by(user_id=user.id, name="MyBank").one()
+    assert card.linked_bank_id == linked_bank.id
+    assert linked_bank.is_active
+    assert client.put(f"/api/v1/payment-methods/{card.id}", json={"is_active": False}).status_code == 200
+
+    payload = {
+        "date": "2026-03-10", "detail": "Inactive card activity", "amount": 50,
+        "payment_method_id": card.id, "category_id": category_id,
+        "transaction_direction": "debit",
+    }
+    if recurrence_months:
+        payload["recurrence_months"] = recurrence_months
+    response = client.post("/api/v1/transactions", json=payload)
+
+    assert response.status_code == 422
+    assert db.query(Transaction).filter_by(user_id=user.id).count() == 0
+
+
 def test_create_transaction_rejects_foreign_category_id(client):
     """A user must not be able to create a transaction against another user's category."""
     pm_id, _ = _setup(client)
@@ -364,7 +393,8 @@ def test_date_month_filters_by_transaction_date(client):
         "name": "Bank", "type": "bank", "is_main_bank": True, "is_active": True, "opening_balance": 0
     })
     cc_r = client.post("/api/v1/payment-methods", json={
-        "name": "CC", "type": "credit_card", "is_main_bank": False, "is_active": True
+        "name": "CC", "type": "credit_card", "linked_bank_id": bank_r.json()["id"],
+        "is_main_bank": False, "is_active": True,
     })
     cat_id = client.get("/api/v1/categories").json()[0]["id"]
 
@@ -510,7 +540,10 @@ def test_create_valid_direction_combinations_succeed(client):
 def test_create_credit_on_revolving_pm_succeeds(client):
     """revolving PMs accept both debit and credit."""
     pm_id, cat_id = _setup(client)
-    rev = client.post("/api/v1/payment-methods", json={"name": "Revolving", "type": "revolving"}).json()
+    rev = client.post(
+        "/api/v1/payment-methods",
+        json={"name": "Revolving", "type": "revolving", "linked_bank_id": pm_id},
+    ).json()
     assert client.post("/api/v1/transactions", json={
         "date": "2026-03-10", "detail": "Payoff", "amount": 100,
         "payment_method_id": rev["id"], "category_id": cat_id,
@@ -521,7 +554,10 @@ def test_create_credit_on_revolving_pm_succeeds(client):
 def test_create_credit_on_credit_card_succeeds(client):
     """credit_card PMs accept credit (payoff/refund) — bank_balance gives it defined semantics."""
     pm_id, cat_id = _setup(client)
-    cc = client.post("/api/v1/payment-methods", json={"name": "CreditCC", "type": "credit_card"}).json()
+    cc = client.post(
+        "/api/v1/payment-methods",
+        json={"name": "CreditCC", "type": "credit_card", "linked_bank_id": pm_id},
+    ).json()
     assert client.post("/api/v1/transactions", json={
         "date": "2026-03-10", "detail": "CC payoff", "amount": 100,
         "payment_method_id": cc["id"], "category_id": cat_id,
@@ -689,6 +725,94 @@ def test_create_transaction_invalid_date_returns_422(client):
         "payment_method_id": pm_id, "transaction_direction": "debit",
     })
     assert r.status_code == 422
+
+
+@pytest.mark.parametrize(
+    ("payment_method_type", "direction", "expected_status"),
+    [
+        ("bank", "income", 200), ("bank", "debit", 200), ("bank", "credit", 422),
+        ("debit_card", "income", 422), ("debit_card", "debit", 200), ("debit_card", "credit", 200),
+        ("credit_card", "income", 422), ("credit_card", "debit", 200), ("credit_card", "credit", 200),
+        ("revolving", "income", 422), ("revolving", "debit", 200), ("revolving", "credit", 200),
+        ("prepaid", "income", 200), ("prepaid", "debit", 200), ("prepaid", "credit", 422),
+        ("cash", "income", 200), ("cash", "debit", 200), ("cash", "credit", 422),
+    ],
+)
+def test_transaction_api_enforces_payment_method_direction_matrix(
+    client, payment_method_type, direction, expected_status
+):
+    """Every payment-method/direction pair is accepted or rejected by the documented matrix."""
+    bank_id, category_id = _setup(client)
+    methods = client.get("/api/v1/payment-methods").json()
+    payment_method_id = next(
+        (method["id"] for method in methods if method["type"] == payment_method_type),
+        None,
+    )
+    if payment_method_id is None:
+        payload = {"name": f"{payment_method_type}-method", "type": payment_method_type}
+        if payment_method_type in {"debit_card", "credit_card", "revolving"}:
+            payload["linked_bank_id"] = bank_id
+        payment_method_id = client.post("/api/v1/payment-methods", json=payload).json()["id"]
+
+    response = client.post("/api/v1/transactions", json={
+        "date": "2026-01-15", "detail": "Matrix transaction", "amount": 10,
+        "payment_method_id": payment_method_id, "category_id": category_id,
+        "transaction_direction": direction,
+    })
+
+    assert response.status_code == expected_status
+
+
+def test_unlinked_bank_funded_card_activity_is_rejected(client, db):
+    _, category_id = _setup(client)
+    from app.models.payment_method import PaymentMethod
+    from app.models.user import User
+
+    user = db.query(User).filter_by(email="alice@example.com").one()
+    card = PaymentMethod(user_id=user.id, name="Legacy unlinked card", type="credit_card")
+    db.add(card)
+    db.commit()
+
+    response = client.post("/api/v1/transactions", json={
+        "date": "2026-01-15", "detail": "Unsupported card activity", "amount": 10,
+        "payment_method_id": card.id, "category_id": category_id,
+        "transaction_direction": "debit",
+    })
+
+    assert response.status_code == 422
+
+
+def test_inactive_current_card_link_preserves_historical_activity_but_rejects_new_activity(client, db):
+    _, category_id = _setup(client)
+    from app.models.user import User
+    from app.services.bank_balance import compute_bank_balance
+
+    methods = client.get("/api/v1/payment-methods").json()
+    card_id = next(pm["id"] for pm in methods if pm["name"] == "MyBank Debit")
+    second_bank_id = next(pm["id"] for pm in methods if pm["name"] == "SecondBank")
+
+    historical = client.post("/api/v1/transactions", json={
+        "date": "2026-01-15", "detail": "Historical card purchase", "amount": 10,
+        "payment_method_id": card_id, "category_id": category_id,
+        "transaction_direction": "debit",
+    })
+    assert historical.status_code == 200
+    assert client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": second_bank_id, "effective_billing_month": "2026-02-01",
+    }).status_code == 200
+    assert client.put(
+        f"/api/v1/payment-methods/{second_bank_id}", json={"is_active": False}
+    ).status_code == 200
+
+    response = client.post("/api/v1/transactions", json={
+        "date": "2026-02-15", "detail": "Inactive linked bank purchase", "amount": 20,
+        "payment_method_id": card_id, "category_id": category_id,
+        "transaction_direction": "debit",
+    })
+
+    assert response.status_code == 422
+    user = db.query(User).filter_by(email="alice@example.com").one()
+    assert compute_bank_balance(user.id, 2026, 2, db) == pytest.approx(4990.0)
 
 
 def test_list_transactions_requires_filter(client):

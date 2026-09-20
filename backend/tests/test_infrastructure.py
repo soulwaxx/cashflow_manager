@@ -1,6 +1,7 @@
 """Tests for database.py and deps.py infrastructure that is always overridden in API tests."""
 import os
-import tempfile
+from pathlib import Path
+
 import pytest
 
 
@@ -162,6 +163,8 @@ def test_main_lifespan_runs_alembic_migration(tmp_path):
     from fastapi.testclient import TestClient
     from app.main import create_app
     from app.config import get_settings
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
     from app.database import get_engine, get_session_factory
 
     db_file = str(tmp_path / "lifespan_alembic.db")
@@ -179,9 +182,29 @@ def test_main_lifespan_runs_alembic_migration(tmp_path):
         with TestClient(fresh_app, raise_server_exceptions=True) as c:
             resp = c.get("/docs")
             assert resp.status_code == 200
+        with get_engine().connect() as connection:
+            revision = connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one()
+        alembic_cfg = Config(Path(__file__).resolve().parents[1] / "alembic.ini")
+        alembic_cfg.set_main_option(
+            "script_location", str(Path(__file__).resolve().parents[1] / "alembic")
+        )
+        assert revision == ScriptDirectory.from_config(alembic_cfg).get_current_head()
     finally:
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)
         os.environ.pop("DEVELOPMENT_MODE", None)
         get_settings.cache_clear()
+
+
+def test_production_entrypoint_leaves_migrations_to_fastapi_lifespan():
+    """start.sh launches Uvicorn; the FastAPI lifespan is the sole migration owner."""
+    repo_root = Path(__file__).resolve().parents[2]
+    start_script = (repo_root / "start.sh").read_text()
+    main_source = (repo_root / "backend" / "app" / "main.py").read_text()
+
+    assert "alembic upgrade" not in start_script
+    assert "exec uvicorn app.main:app" in start_script
+    assert main_source.count('command.upgrade(cfg, "head")') == 1

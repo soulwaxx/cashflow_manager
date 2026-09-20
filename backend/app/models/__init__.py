@@ -1,7 +1,8 @@
 from app.database import Base  # noqa: F401
 from app.models.user import User, UserSetting  # noqa: F401
-from app.models.payment_method import PaymentMethod, MainBankHistory  # noqa: F401
+from app.models.payment_method import CardBankLinkHistory, MainBankHistory, PaymentMethod  # noqa: F401
 from app.models.category import Category  # noqa: F401
+from app.models.account import Account  # noqa: F401
 from app.models.transaction import Transaction  # noqa: F401
 from app.models.transfer import Transfer  # noqa: F401
 from app.models.asset import Asset  # noqa: F401

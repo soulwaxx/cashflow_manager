@@ -31,7 +31,6 @@ async def lifespan(app: FastAPI):
             os.path.join(os.path.dirname(__file__), "..", "alembic")
         )
         cfg = Config(alembic_ini)
-        cfg.set_main_option("sqlalchemy.url", f"sqlite:///{settings.db_path}")
         cfg.set_main_option("script_location", alembic_dir)
         command.upgrade(cfg, "head")
         SessionLocal = get_session_factory()
@@ -59,7 +58,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router.router, prefix="/api/v1")
     from app.routers import onboarding as onboarding_router
     app.include_router(onboarding_router.router, prefix="/api/v1")
-    from app.routers import payment_methods as pm_router, categories as cat_router
+    from app.routers import accounts as accounts_router, payment_methods as pm_router, categories as cat_router
+    app.include_router(accounts_router.router, prefix="/api/v1")
     app.include_router(pm_router.router, prefix="/api/v1")
     app.include_router(cat_router.router, prefix="/api/v1")
     from app.routers import salary as salary_router, tax_config as tax_router

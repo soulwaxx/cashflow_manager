@@ -88,6 +88,48 @@ def test_delete_earliest_user_owned_tax_config_returns_400(client):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"valid_from": "2027-01-01", "inps_rate": -0.01},
+        {"valid_from": "2027-01-01", "irpef_band1_rate": 1.0001},
+        {"valid_from": "2027-01-01", "irpef_band1_limit": 50000, "irpef_band2_limit": 28000},
+        {
+            "valid_from": "2027-01-01",
+            "employment_deduction_band1_limit": 28000,
+            "employment_deduction_band2_limit": 15000,
+        },
+        {"valid_from": "2027-01-01", "employment_deduction_band2_range": 0},
+        {"valid_from": "2027-01-01", "employment_deduction_band3_range": "NaN"},
+    ],
+)
+def test_tax_config_rejects_unsafe_tables(client, payload):
+    client.post("/api/v1/auth/register", json={
+        "email": "tax-validation@example.com", "password": "Password1!", "name": "Tax"
+    })
+
+    response = client.post("/api/v1/tax-config", json=payload)
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("effective_date", ["not-a-date", "2027-01-15"])
+def test_tax_config_rejects_noncanonical_effective_period_without_persisting(
+    client, db, effective_date
+):
+    from app.models.tax import TaxConfig
+    from app.models.user import User
+
+    client.post("/api/v1/auth/register", json={
+        "email": "tax-date@example.com", "password": "Password1!", "name": "Tax Date"
+    })
+    response = client.post("/api/v1/tax-config", json={"valid_from": effective_date})
+
+    assert response.status_code == 422
+    user = db.query(User).filter_by(email="tax-date@example.com").one()
+    assert db.query(TaxConfig).filter_by(user_id=user.id).count() == 0
+
+
 def test_resolve_tax_config_returns_user_row_when_present(client, db):
     """resolve_tax_config must return a user-specific row (line 16) instead of the system row."""
     from app.models.user import User

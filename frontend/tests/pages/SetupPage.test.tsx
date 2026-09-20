@@ -58,7 +58,7 @@ test('SetupPage advances to step 2 after filling start date and clicking Next', 
   expect(screen.getByText('Step 2 of 8')).toBeInTheDocument();
 });
 
-test('Back navigation preserves entries added on a list step (payment methods)', async () => {
+test('Back navigation preserves a valid linked bank-funded payment method', async () => {
   const user = userEvent.setup();
   render(<SetupPage />, { wrapper });
 
@@ -78,9 +78,13 @@ test('Back navigation preserves entries added on a list step (payment methods)',
   );
   await user.click(screen.getByRole('button', { name: /next/i }));
 
-  // Step 4: payment methods — add one entry
+  // Step 4: payment methods — bank-funded cards require an owned onboarding bank.
   await waitFor(() => expect(screen.getByText('Payment methods (optional)')).toBeInTheDocument());
   await user.type(screen.getByLabelText(/^name$/i), 'My Card');
+  await user.click(screen.getByRole('button', { name: /^add$/i }));
+  expect(screen.queryByText('My Card')).not.toBeInTheDocument();
+
+  await user.type(screen.getByLabelText(/linked bank/i), 'Main Bank');
   await user.click(screen.getByRole('button', { name: /^add$/i }));
   expect(screen.getByText('My Card')).toBeInTheDocument();
 

@@ -1,3 +1,6 @@
+import pytest
+
+
 def _setup(client):
     client.post("/api/v1/auth/register", json={
         "email": "alice@example.com", "password": "Password1!", "name": "Alice"
@@ -16,6 +19,26 @@ def test_create_payment_method(client):
     r = client.post("/api/v1/payment-methods", json={"name": "MyPrepaid", "type": "prepaid"})
     assert r.status_code == 200
     assert r.json()["name"] == "MyPrepaid"
+
+def test_create_bank_funded_card_requires_linked_bank(client):
+    _setup(client)
+    response = client.post("/api/v1/payment-methods", json={"name": "Unlinked", "type": "credit_card"})
+    assert response.status_code == 422
+
+
+def test_create_card_rejects_inactive_linked_bank(client):
+    _setup(client)
+    inactive_bank_id = next(
+        pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "SecondBank"
+    )
+    assert client.put(f"/api/v1/payment-methods/{inactive_bank_id}", json={"is_active": False}).status_code == 200
+
+    response = client.post("/api/v1/payment-methods", json={
+        "name": "Inactive linked card", "type": "credit_card", "linked_bank_id": inactive_bank_id,
+    })
+
+    assert response.status_code == 422
+
 
 def test_rename_payment_method(client):
     _setup(client)
@@ -73,8 +96,10 @@ def test_set_main_bank_replaces_same_month_history_row(client):
 def test_active_only_excludes_inactive(client):
     _setup(client)
     # Create a payment method
+    bank_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["type"] == "bank")
     r = client.post("/api/v1/payment-methods", json={
-        "name": "My Card", "type": "credit_card", "is_main_bank": False, "is_active": True,
+        "name": "My Card", "type": "credit_card", "linked_bank_id": bank_id,
+        "is_main_bank": False, "is_active": True,
     })
     pm_id = r.json()["id"]
     # Deactivate it
@@ -108,8 +133,9 @@ def test_stamp_duty_appears_in_monthly_summary(client):
     client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
 
     # Create a credit card with stamp duty enabled
+    bank_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["type"] == "bank")
     r = client.post("/api/v1/payment-methods", json={
-        "name": "StampCard", "type": "credit_card", "has_stamp_duty": True
+        "name": "StampCard", "type": "credit_card", "linked_bank_id": bank_id, "has_stamp_duty": True
     })
     assert r.status_code == 200
     card_id = r.json()["id"]
@@ -188,7 +214,7 @@ def test_pm_rename_cascades_to_transfers(client):
     client.post("/api/v1/transfers", json={
         "date": "2026-03-10", "detail": "To savings", "amount": 500,
         "from_account_type": "bank", "from_account_name": "MyBank",
-        "to_account_type": "saving", "to_account_name": "My Savings",
+        "to_account_type": "saving", "to_account_name": "MySavings",
     })
 
     # Rename MyBank → NewBank
@@ -203,6 +229,64 @@ def test_pm_rename_cascades_to_transfers(client):
         "Old PM name still present in transfers after rename"
 
 
+def test_bank_rename_updates_only_matching_bank_transfer_endpoints(client, db):
+    """A bank rename cannot rewrite same-named non-bank transfer snapshots."""
+    _setup(client)
+    from app.models.payment_method import PaymentMethod
+    from app.models.transfer import Transfer
+
+    methods = client.get("/api/v1/payment-methods").json()
+    bank_id = next(method["id"] for method in methods if method["name"] == "MyBank")
+    saving_id = client.post("/api/v1/accounts", json={
+        "type": "saving", "name": "MyBank", "opening_balance": 0,
+    }).json()["id"]
+    owner_id = db.get(PaymentMethod, bank_id).user_id
+
+    transfers = [
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="stable from", amount=1,
+            from_account_type="bank", from_account_name="MyBank", from_payment_method_id=bank_id,
+            to_account_type="saving", to_account_name="MyBank", to_account_id=saving_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="stable to", amount=1,
+            from_account_type="saving", from_account_name="MyBank", from_account_id=saving_id,
+            to_account_type="bank", to_account_name="MyBank", to_payment_method_id=bank_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="legacy from", amount=1,
+            from_account_type="bank", from_account_name="MyBank",
+            to_account_type="saving", to_account_name="MyBank", to_account_id=saving_id,
+            billing_month="2026-03-01",
+        ),
+        Transfer(
+            user_id=owner_id, date="2026-03-01", detail="legacy to", amount=1,
+            from_account_type="saving", from_account_name="MyBank", from_account_id=saving_id,
+            to_account_type="bank", to_account_name="MyBank",
+            billing_month="2026-03-01",
+        ),
+    ]
+    db.add_all(transfers)
+    db.commit()
+    transfer_ids = [transfer.id for transfer in transfers]
+
+    response = client.put(f"/api/v1/payment-methods/{bank_id}", json={"name": "RenamedBank"})
+    assert response.status_code == 200
+
+    db.expire_all()
+    stable_from, stable_to, legacy_from, legacy_to = [db.get(Transfer, transfer_id) for transfer_id in transfer_ids]
+    assert stable_from.from_account_name == "RenamedBank"
+    assert stable_from.to_account_name == "MyBank"
+    assert stable_to.from_account_name == "MyBank"
+    assert stable_to.to_account_name == "RenamedBank"
+    assert legacy_from.from_account_name == "RenamedBank"
+    assert legacy_from.to_account_name == "MyBank"
+    assert legacy_to.from_account_name == "MyBank"
+    assert legacy_to.to_account_name == "RenamedBank"
+
+
 def test_create_payment_method_invalid_type_returns_422(client):
     _setup(client)
     r = client.post("/api/v1/payment-methods", json={"name": "X", "type": "crypto"})
@@ -212,7 +296,7 @@ def test_create_payment_method_invalid_type_returns_422(client):
 def test_update_payment_method_rejects_foreign_linked_bank_id(client):
     """linked_bank_id on update must belong to the current user."""
     _setup(client)
-    wallet_id = client.post("/api/v1/payment-methods", json={"name": "Wallet", "type": "prepaid"}).json()["id"]
+    card_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyCard")
 
     client.post("/api/v1/auth/logout")
     client.post("/api/v1/auth/register", json={
@@ -226,7 +310,9 @@ def test_update_payment_method_rejects_foreign_linked_bank_id(client):
     client.post("/api/v1/auth/login", json={
         "email": "alice@example.com", "password": "Password1!"
     })
-    r = client.put(f"/api/v1/payment-methods/{wallet_id}", json={"linked_bank_id": foreign_bank_id})
+    r = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": foreign_bank_id, "effective_billing_month": "2026-02-01",
+    })
     assert r.status_code == 422
 
 
@@ -235,17 +321,78 @@ def test_update_payment_method_rejects_non_bank_linked_bank_id(client):
     card_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyCard")
     wallet_id = client.post("/api/v1/payment-methods", json={"name": "Wallet", "type": "prepaid"}).json()["id"]
 
-    r = client.put(f"/api/v1/payment-methods/{card_id}", json={"linked_bank_id": wallet_id})
+    r = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": wallet_id, "effective_billing_month": "2026-02-01",
+    })
     assert r.status_code == 422
 
 
-def test_update_payment_method_can_clear_linked_bank_id(client):
+def test_update_payment_method_cannot_clear_linked_bank_id_for_bank_funded_card(client):
     _setup(client)
     methods = client.get("/api/v1/payment-methods").json()
     bank_id = next(pm["id"] for pm in methods if pm["type"] == "bank")
     card_id = next(pm["id"] for pm in methods if pm["name"] == "MyCard")
 
-    assert client.put(f"/api/v1/payment-methods/{card_id}", json={"linked_bank_id": bank_id}).status_code == 200
-    r = client.put(f"/api/v1/payment-methods/{card_id}", json={"linked_bank_id": None})
-    assert r.status_code == 200
-    assert r.json()["linked_bank_id"] is None
+    r = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": None, "effective_billing_month": "2026-02-01",
+    })
+    assert r.status_code == 422
+
+
+@pytest.mark.parametrize("effective_billing_month", ["20260201", "2026-02-02", "invalid-date", None])
+def test_relink_requires_a_first_of_month_billing_period(client, effective_billing_month):
+    _setup(client)
+    methods = client.get("/api/v1/payment-methods").json()
+    card_id = next(pm["id"] for pm in methods if pm["name"] == "MyCard")
+    second_bank_id = next(pm["id"] for pm in methods if pm["name"] == "SecondBank")
+
+    response = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": second_bank_id,
+        "effective_billing_month": effective_billing_month,
+    })
+
+    assert response.status_code == 422
+
+
+def test_relink_requires_effective_period_and_rejects_overlapping_period(client):
+    _setup(client)
+    methods = client.get("/api/v1/payment-methods").json()
+    card_id = next(pm["id"] for pm in methods if pm["name"] == "MyCard")
+    main_bank_id = next(pm["id"] for pm in methods if pm["name"] == "MyBank")
+    second_bank_id = next(pm["id"] for pm in methods if pm["name"] == "SecondBank")
+
+    assert client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": second_bank_id,
+    }).status_code == 422
+    assert client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": second_bank_id, "effective_billing_month": "2026-03-01",
+    }).status_code == 200
+    overlap = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": main_bank_id, "effective_billing_month": "2026-02-01",
+    })
+    assert overlap.status_code == 422
+
+
+def test_relink_rejects_nonexistent_bank(client):
+    _setup(client)
+    card_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyCard")
+
+    response = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": "missing-bank", "effective_billing_month": "2026-02-01",
+    })
+
+    assert response.status_code == 422
+
+
+def test_relink_rejects_inactive_bank(client):
+    _setup(client)
+    methods = client.get("/api/v1/payment-methods").json()
+    card_id = next(pm["id"] for pm in methods if pm["name"] == "MyCard")
+    inactive_bank_id = next(pm["id"] for pm in methods if pm["name"] == "SecondBank")
+    assert client.put(f"/api/v1/payment-methods/{inactive_bank_id}", json={"is_active": False}).status_code == 200
+
+    response = client.put(f"/api/v1/payment-methods/{card_id}", json={
+        "linked_bank_id": inactive_bank_id, "effective_billing_month": "2026-02-01",
+    })
+
+    assert response.status_code == 422

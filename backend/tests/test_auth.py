@@ -122,8 +122,13 @@ def test_insecure_defaults_raises_error():
 def test_secure_config_no_warning(caplog):
     """warn_insecure_defaults() emits no warnings when secrets are properly set."""
     import logging
+    import secrets
     from app.config import Settings
-    s = Settings(development_mode=False, secret_key="real-secret", session_encryption_key="a" * 64)
+    s = Settings(
+        development_mode=False,
+        secret_key=secrets.token_hex(32),
+        session_encryption_key=secrets.token_hex(32),
+    )
     with caplog.at_level(logging.WARNING, logger="cashflow.config"):
         s.warn_insecure_defaults()
     assert caplog.records == []

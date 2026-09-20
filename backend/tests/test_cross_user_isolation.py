@@ -229,12 +229,12 @@ def test_assets_list_does_not_expose_other_user_data(client, db):
     """Bob's asset list must not contain Alice's personal savings account."""
     _register_and_onboard_alice(client)
     # Alice has "MySavings" from onboarding
-    alice_assets = client.get("/api/v1/assets/2026").json()
+    alice_assets = client.get("/api/v1/assets/2026?as_of=2026-01-01").json()
     assert any(a["asset_name"] == "MySavings" for a in alice_assets)
 
     _switch_to_bob(client)
     client.post("/api/v1/onboarding", json=_MINIMAL_ONBOARDING)
-    bob_assets = client.get("/api/v1/assets/2026").json()
+    bob_assets = client.get("/api/v1/assets/2026?as_of=2026-01-01").json()
     asset_names = [a["asset_name"] for a in bob_assets]
     assert "MySavings" not in asset_names, (
         f"Bob can see Alice's MySavings asset: {asset_names}"
@@ -288,7 +288,7 @@ def test_tax_config_does_not_leak_across_users(client):
 
 
 def test_assets_put_override_does_not_affect_other_user(client, db):
-    """Bob setting a manual override on an asset name that Alice also has must not affect Alice."""
+    """Bob's override for his own stable account must not affect Alice's account."""
     from app.models.asset import Asset
     from app.models.user import User
 
@@ -296,21 +296,21 @@ def test_assets_put_override_does_not_affect_other_user(client, db):
 
     _switch_to_bob(client)
     client.post("/api/v1/onboarding", json=_MINIMAL_ONBOARDING)
-    # Bob sets a manual override on a fictional shared asset name
-    r = client.put("/api/v1/assets/2026/saving/MySavings",
-                   json={"manual_override": 9999.0, "notes": "Bob override"})
+    bob_account = client.post("/api/v1/accounts", json={
+        "type": "saving", "name": "MySavings", "opening_balance": 0,
+    })
+    assert bob_account.status_code == 200
+    r = client.put(
+        f"/api/v1/assets/2026/saving/{bob_account.json()['id']}",
+        json={"manual_override": 9999.0, "notes": "Bob override"},
+    )
     assert r.status_code == 200
 
-    # Verify in DB that Alice's asset row (if it exists) is unaffected
     alice_user = db.query(User).filter_by(email=_ALICE["email"]).first()
     alice_row = db.query(Asset).filter_by(
         user_id=alice_user.id, year=2026, asset_type="saving", asset_name="MySavings"
     ).first()
-    # Alice should have no manual override row (the PUT only touches Bob's row)
-    if alice_row is not None:
-        assert alice_row.manual_override is None, (
-            f"Bob's PUT leaked manual_override={alice_row.manual_override} into Alice's asset row"
-        )
+    assert alice_row is None
 
 
 # ---------------------------------------------------------------------------
@@ -321,10 +321,10 @@ def _alice_salary(client):
     """Register Alice, onboard, create a salary config. Returns salary_id."""
     _register_and_onboard_alice(client)
     # First need a tax config for the period
-    client.post("/api/v1/tax-config", json={"valid_from": "2026-01"})
+    client.post("/api/v1/tax-config", json={"valid_from": "2026-01-01"})
     # Tax config creation may already exist from seed — ignore 409
     r = client.post("/api/v1/salary", json={
-        "valid_from": "2026-01",
+        "valid_from": "2026-01-01",
         "ral": 40000,
         "employer_contrib_rate": 0.0919,
     })
@@ -347,7 +347,7 @@ def test_salary_update_by_other_user_returns_404(client):
     salary_id = _alice_salary(client)
     _switch_to_bob(client)
     r = client.put(f"/api/v1/salary/{salary_id}", json={
-        "valid_from": "2026-01", "ral": 99999, "employer_contrib_rate": 0.0
+        "valid_from": "2026-01-01", "ral": 99999, "employer_contrib_rate": 0.0
     })
     assert r.status_code == 404
 

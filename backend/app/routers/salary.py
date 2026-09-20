@@ -1,63 +1,85 @@
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.deps import get_db, get_current_user
 from app.models.user import User
+from app.models.account import Account
 from app.models.salary import SalaryConfig
-from app.schemas.salary import SalaryConfigCreate
-from app.services.salary import calculate_salary
+from app.schemas.salary import SalaryCalculationRequest, SalaryConfigCreate
+from app.services.salary import SalaryCalculationError, calculate_salary
 from app.services.tax import resolve_tax_config
 
 router = APIRouter(prefix="/salary", tags=["salary"])
 
 
+def _calculate_or_422(salary_cfg, tax_cfg):
+    try:
+        return calculate_salary(salary_cfg, tax_cfg)
+    except SalaryCalculationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+
+def _ensure_pension_account(db: Session, user_id: str) -> None:
+    if not db.query(Account.id).filter_by(user_id=user_id, type="pension").first():
+        db.add(Account(user_id=user_id, type="pension", name="Pension", opening_balance=0))
+
+
+def _salary_response(salary_config: SalaryConfig) -> dict:
+    response = {
+        column.name: getattr(salary_config, column.name)
+        for column in salary_config.__table__.columns
+    }
+    response["effective_net_monthly"] = (
+        salary_config.manual_net_override
+        if salary_config.manual_net_override is not None
+        else salary_config.computed_net_monthly
+    )
+    return response
+
+
 # /calculate MUST be registered before /{salary_id} to avoid route shadowing
 @router.get("/calculate")
 def preview_salary(
-    as_of: str = Query(...),
-    ral: float = Query(...),
-    employer_contrib_rate: float = Query(0.0),
-    voluntary_contrib_rate: float = Query(0.0),
-    regional_tax_rate: float = Query(0.0),
-    municipal_tax_rate: float = Query(0.0),
-    meal_vouchers_annual: float = Query(0.0),
-    welfare_annual: float = Query(0.0),
-    salary_months: int = Query(12, ge=1),
+    request: Annotated[SalaryCalculationRequest, Query()],
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    tax_cfg = resolve_tax_config(db, as_of, current_user.id)
+    tax_cfg = resolve_tax_config(db, request.as_of, current_user.id)
     if not tax_cfg:
         raise HTTPException(422, "No tax config found for the given period")
 
     cfg = SalaryConfigCreate(
-        valid_from=as_of,
-        ral=ral,
-        employer_contrib_rate=employer_contrib_rate,
-        voluntary_contrib_rate=voluntary_contrib_rate,
-        regional_tax_rate=regional_tax_rate,
-        municipal_tax_rate=municipal_tax_rate,
-        meal_vouchers_annual=meal_vouchers_annual,
-        welfare_annual=welfare_annual,
-        salary_months=salary_months,
+        valid_from=request.as_of, **request.model_dump(exclude={"as_of"})
     )
-    return calculate_salary(cfg, tax_cfg).__dict__
+    return _calculate_or_422(cfg, tax_cfg).__dict__
 
 
 @router.get("")
 def list_salary(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(SalaryConfig).filter_by(user_id=current_user.id).order_by(SalaryConfig.valid_from).all()
+    return [
+        _salary_response(config)
+        for config in db.query(SalaryConfig).filter_by(user_id=current_user.id).order_by(SalaryConfig.valid_from)
+    ]
 
 
 @router.post("")
 def create_salary(req: SalaryConfigCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     tax_cfg = resolve_tax_config(db, req.valid_from[:7], current_user.id)
-    breakdown = calculate_salary(req, tax_cfg) if tax_cfg else None
-    sc = SalaryConfig(user_id=current_user.id, **req.model_dump(),
-                      computed_net_monthly=breakdown.net_monthly if breakdown else 0)
+    if not tax_cfg:
+        raise HTTPException(422, "No tax config found for the given period")
+    breakdown = _calculate_or_422(req, tax_cfg)
+    if req.employer_contrib_rate > 0 or req.voluntary_contrib_rate > 0:
+        _ensure_pension_account(db, current_user.id)
+    sc = SalaryConfig(
+        user_id=current_user.id,
+        **req.model_dump(),
+        computed_net_monthly=breakdown.net_monthly,
+    )
     db.add(sc)
     db.commit()
     db.refresh(sc)
-    return sc
+    return _salary_response(sc)
 
 
 @router.put("/{salary_id}")
@@ -65,14 +87,22 @@ def update_salary(salary_id: str, req: SalaryConfigCreate, current_user: User = 
     sc = db.query(SalaryConfig).filter_by(id=salary_id, user_id=current_user.id).first()
     if not sc:
         raise HTTPException(404, "Not found")
-    for field, val in req.model_dump(exclude_none=True).items():
+    tax_cfg = resolve_tax_config(db, req.valid_from[:7], current_user.id)
+    if not tax_cfg:
+        raise HTTPException(422, "No tax config found for the given period")
+    breakdown = _calculate_or_422(req, tax_cfg)
+    if req.employer_contrib_rate > 0 or req.voluntary_contrib_rate > 0:
+        _ensure_pension_account(db, current_user.id)
+
+    values = req.model_dump(exclude_none=True)
+    if "manual_net_override" in req.model_fields_set:
+        values["manual_net_override"] = req.manual_net_override
+    for field, val in values.items():
         setattr(sc, field, val)
-    tax_cfg = resolve_tax_config(db, sc.valid_from[:7], current_user.id)
-    if tax_cfg:
-        sc.computed_net_monthly = calculate_salary(sc, tax_cfg).net_monthly
+    sc.computed_net_monthly = breakdown.net_monthly
     db.commit()
     db.refresh(sc)
-    return sc
+    return _salary_response(sc)
 
 
 @router.delete("/{salary_id}")

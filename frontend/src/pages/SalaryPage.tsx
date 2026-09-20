@@ -108,6 +108,7 @@ interface PeriodFields {
   meal_vouchers_annual: string;
   welfare_annual: string;
   salary_months: string;
+  manual_net_override: string;
 }
 
 function configToFields(cfg: SalaryConfig): PeriodFields {
@@ -121,6 +122,7 @@ function configToFields(cfg: SalaryConfig): PeriodFields {
     meal_vouchers_annual: String(cfg.meal_vouchers_annual),
     welfare_annual: String(cfg.welfare_annual),
     salary_months: String(cfg.salary_months ?? 12),
+    manual_net_override: cfg.manual_net_override == null ? '' : String(cfg.manual_net_override),
   };
 }
 
@@ -135,6 +137,7 @@ function fieldsToBody(d: PeriodFields) {
     meal_vouchers_annual: parseFloat(d.meal_vouchers_annual) || 0,
     welfare_annual: parseFloat(d.welfare_annual) || 0,
     salary_months: parseInt(d.salary_months) || 12,
+    manual_net_override: d.manual_net_override === '' ? null : parseFloat(d.manual_net_override),
   };
 }
 
@@ -158,13 +161,14 @@ export default function SalaryPage() {
       meal_vouchers_annual: '0',
       welfare_annual: '0',
       salary_months: '12',
+      manual_net_override: '',
     },
   });
 
   const { register: regEdit, handleSubmit: handleEditSubmit, reset: resetEdit } = useForm<PeriodFields>();
 
   const { mutate: addPeriod, isPending: adding } = useMutation({
-    mutationFn: (d: PeriodFields) => salaryApi.create({ ...fieldsToBody(d), manual_net_override: null }),
+    mutationFn: (d: PeriodFields) => salaryApi.create(fieldsToBody(d)),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['salary'] });
       setAddOpen(false);
@@ -192,6 +196,7 @@ export default function SalaryPage() {
       <Input label="Municipal tax rate (%)" type="number" step="0.001" required {...reg('municipal_tax_rate_pct', { required: true })} />
       <Input label="Meal vouchers annual (€)" type="number" step="1" {...reg('meal_vouchers_annual', { required: true })} />
       <Input label="Welfare annual (€)" type="number" step="1" {...reg('welfare_annual', { required: true })} />
+      <Input label="Manual net override (€ / month)" type="number" min="0" step="0.01" hint="Optional; this becomes the effective monthly net while the calculated value is retained." {...reg('manual_net_override')} />
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-secondary">Salary months *</label>
         <select
@@ -242,9 +247,9 @@ export default function SalaryPage() {
                     Edit
                   </Button>
                   <div className="text-right">
-                    <div className="text-lg font-bold text-blue-700 dark:text-blue-400">€{fmt(cfg.computed_net_monthly)}<span className="text-sm text-faint">/mo</span></div>
-                    {cfg.manual_net_override && (
-                      <div className="text-xs text-yellow-600">manual override: €{fmt(cfg.manual_net_override)}</div>
+                    <div className="text-lg font-bold text-blue-700 dark:text-blue-400">€{fmt(cfg.effective_net_monthly ?? cfg.manual_net_override ?? cfg.computed_net_monthly)}<span className="text-sm text-faint">/mo</span></div>
+                    {cfg.manual_net_override != null && (
+                      <div className="text-xs text-yellow-600">manual override (computed: €{fmt(cfg.computed_net_monthly)})</div>
                     )}
                   </div>
                 </div>

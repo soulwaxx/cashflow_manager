@@ -6,10 +6,17 @@ import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+from app.config import get_settings
 from app.database import Base
 import app.models  # noqa: F401 — registers all models
 
 config = context.config
+# Keep direct Alembic commands on the same configured SQLite database as the app.
+# Programmatic callers may provide an explicit test-only path through Config.attributes.
+db_path = config.attributes.get("db_path")
+if db_path is None:
+    db_path = get_settings().db_path
+config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 

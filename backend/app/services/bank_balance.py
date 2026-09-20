@@ -2,10 +2,11 @@ import bisect
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 from sqlalchemy.orm import Session
-from app.models.payment_method import PaymentMethod, MainBankHistory
+from app.models.payment_method import CardBankLinkHistory, MainBankHistory, PaymentMethod
 from app.models.transaction import Transaction
 from app.models.transfer import Transfer
-from app.services.billing import NEXT_MONTH_TYPES
+from app.services.billing import BANK_FUNDED_CARD_TYPES
+from app.services.transaction_semantics import transaction_semantics
 
 _CENTS = Decimal("0.01")
 
@@ -13,10 +14,12 @@ _CENTS = Decimal("0.01")
 def _bulk_load(user_id: str, start_month_first: str, end_date: str, db: Session):
     """Bulk-load every dataset needed to walk the rolling bank balance.
 
-    Returns a tuple ``(mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month)``:
+    Returns a tuple ``(mbh_rows, mbh_dates, pm_by_id, card_links_by_card,
+    txs_by_month, transfers_by_month)``:
     - ``mbh_rows``: MainBankHistory rows for the user, ordered by ``valid_from`` asc
     - ``mbh_dates``: parallel list of ``valid_from`` strings for O(log n) bisect lookup
     - ``pm_by_id``: ``{payment_method_id: PaymentMethod}``
+    - ``card_links_by_card``: effective card-bank links ordered by billing period
     - ``txs_by_month``: ``{billing_month: [Transaction, ...]}``
     - ``transfers_by_month``: ``{billing_month: [Transfer, ...]}``
     """
@@ -30,6 +33,15 @@ def _bulk_load(user_id: str, start_month_first: str, end_date: str, db: Session)
         pm.id: pm
         for pm in db.query(PaymentMethod).filter_by(user_id=user_id).all()
     }
+    card_links_by_card: dict[str, list[CardBankLinkHistory]] = defaultdict(list)
+    for link in (
+        db.query(CardBankLinkHistory)
+        .filter_by(user_id=user_id)
+        .order_by(CardBankLinkHistory.card_payment_method_id, CardBankLinkHistory.valid_from)
+        .all()
+    ):
+        card_links_by_card[link.card_payment_method_id].append(link)
+
     all_txs = (
         db.query(Transaction)
         .filter(
@@ -56,14 +68,15 @@ def _bulk_load(user_id: str, start_month_first: str, end_date: str, db: Session)
     for t in all_transfers:
         transfers_by_month[t.billing_month].append(t)
 
-    mbh_dates = [row.valid_from for row in mbh_rows]  # already sorted asc
-    return mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month
+    mbh_dates = [_month_start(row.valid_from) for row in mbh_rows]
+    return mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month
 
 
 def _accumulate_balances(
     mbh_rows: list,
     mbh_dates: list[str],
     pm_by_id: dict,
+    card_links_by_card: dict,
     txs_by_month: dict,
     transfers_by_month: dict,
     start_year: int,
@@ -79,6 +92,7 @@ def _accumulate_balances(
     # Accumulate in Decimal so cent-drift never builds up across the month walk.
     # Only the public result dict is converted back to float.
     balance = Decimal("0")
+    active_history_index: int | None = None
     curr_year, curr_month = start_year, start_month
 
     while (curr_year, curr_month) <= (until_year, until_month):
@@ -89,37 +103,36 @@ def _accumulate_balances(
         mbh = mbh_rows[idx] if idx >= 0 else None
 
         if mbh:
-            # On the first month for THIS main bank entry, start from its opening_balance
-            if mbh.valid_from == month_first:
+            # Initialize when the first applicable history row becomes active.  Legacy
+            # rows may have mid-month dates, which take effect for that whole month.
+            if idx != active_history_index:
                 balance = Decimal(str(mbh.opening_balance))
+                active_history_index = idx
 
             pm = pm_by_id.get(mbh.payment_method_id)
             if pm:
-                # Apply transactions for this billing month
+                # Apply transactions for this billing month using the shared
+                # payment-method/direction matrix.  Unsupported legacy rows have no
+                # impact because the API can no longer create them.
                 for tx in txs_by_month.get(month_first, []):
+                    tx_pm = pm_by_id.get(tx.payment_method_id)
                     if tx.payment_method_id == pm.id:
-                        # Transactions directly on the main bank PM: income and
-                        # credit (e.g. a refund) add, debit subtracts.
-                        if tx.transaction_direction in ("income", "credit"):
-                            balance += Decimal(str(tx.amount))
-                        else:
-                            balance -= Decimal(str(tx.amount))
-                    elif tx.transaction_direction == "credit":
-                        # Revolving/credit-card payoff recorded as "credit" → bank pays.
-                        # Debit-card refunds (credit on a debit_card) flow back to the bank.
-                        # Prepaid/cash/saving are not bank-funded.
-                        tx_pm = pm_by_id.get(tx.payment_method_id)
-                        if tx_pm:
-                            if tx_pm.type in NEXT_MONTH_TYPES:
-                                balance -= Decimal(str(tx.amount))
-                            elif tx_pm.type == "debit_card":
-                                balance += Decimal(str(tx.amount))
-                    elif tx.transaction_direction == "debit":
-                        # credit_card → purchase billed next month, drawn from bank in billing_month.
-                        # debit_card  → purchase drawn from bank in the same month.
-                        tx_pm = pm_by_id.get(tx.payment_method_id)
-                        if tx_pm and tx_pm.type in ("credit_card", "debit_card"):
-                            balance -= Decimal(str(tx.amount))
+                        semantics = transaction_semantics(pm.type, tx.transaction_direction)
+                    elif (
+                        tx_pm
+                        and tx_pm.type in BANK_FUNDED_CARD_TYPES
+                        and _linked_bank_for_billing_month(
+                            tx_pm, tx.billing_month, card_links_by_card
+                        ) == pm.id
+                    ):
+                        # Bank-funded cards affect the bank linked for this transaction's
+                        # billing month, never whichever bank the card links to today.
+                        semantics = transaction_semantics(tx_pm.type, tx.transaction_direction)
+                    else:
+                        semantics = None
+
+                    if semantics:
+                        balance += Decimal(str(tx.amount)) * semantics.bank_balance_delta
 
                 # Apply transfers for this billing month — prefer the stable FK id
                 # when available, fall back to name matching for legacy rows that
@@ -180,6 +193,7 @@ def compute_bank_balance(
         mbh_rows = _preloaded["mbh_rows"]
         mbh_dates = _preloaded["mbh_dates"]
         pm_by_id = _preloaded["pm_by_id"]
+        card_links_by_card = _preloaded["card_links_by_card"]
         txs_by_month = _preloaded["txs_by_month"]
         transfers_by_month = _preloaded["transfers_by_month"]
     else:
@@ -191,7 +205,7 @@ def compute_bank_balance(
 
         start_month_first = f"{start_year:04d}-{start_month:02d}-01"
         end_date = f"{year:04d}-{month:02d}-01"
-        mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month = _bulk_load(
+        mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month = _bulk_load(
             user_id, start_month_first, end_date, db
         )
 
@@ -199,7 +213,7 @@ def compute_bank_balance(
         return 0.0
 
     balances = _accumulate_balances(
-        mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month,
+        mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month,
         start_year, start_month, year, month,
     )
 
@@ -224,12 +238,12 @@ def compute_bank_balances_for_year(user_id: str, year: int, db: Session) -> dict
     start_month_first = f"{start_year:04d}-{start_month:02d}-01"
     end_date = f"{year:04d}-12-01"
 
-    mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month = _bulk_load(
+    mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month = _bulk_load(
         user_id, start_month_first, end_date, db
     )
 
     balances = _accumulate_balances(
-        mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month,
+        mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month,
         start_year, start_month, year, 12,
     )
 
@@ -238,6 +252,26 @@ def compute_bank_balances_for_year(user_id: str, year: int, db: Session) -> dict
         key = f"{year:04d}-{m:02d}-01"
         result[m] = balances.get(key, 0.0)
     return result
+
+
+def _linked_bank_for_billing_month(
+    card: PaymentMethod,
+    billing_month: str,
+    card_links_by_card: dict[str, list[CardBankLinkHistory]],
+) -> str | None:
+    links = card_links_by_card.get(card.id, [])
+    if links:
+        effective_dates = [link.valid_from for link in links]
+        index = bisect.bisect_right(effective_dates, billing_month) - 1
+        return links[index].linked_bank_id if index >= 0 else None
+    # Fallback only supports legacy rows that predate the migration. API-created
+    # cards always have a history row, so no current link can rewrite their past.
+    return card.linked_bank_id
+
+
+def _month_start(value: str) -> str:
+    year, month, _ = value.split("-", 2)
+    return f"{int(year):04d}-{int(month):02d}-01"
 
 
 def _advance_month(year: int, month: int):

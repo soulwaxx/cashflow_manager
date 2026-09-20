@@ -2,6 +2,7 @@ import { Badge } from '../ui/Badge';
 import { Button } from '../ui/Button';
 import type { Transaction, PaymentMethod, Category } from '../../types/api';
 import { fmt } from '../../utils/format';
+import { cashImpactForTransaction } from '../../utils/transactionSemantics';
 
 interface Props {
   tx: Transaction;
@@ -12,7 +13,8 @@ interface Props {
 }
 
 export default function TransactionRow({ tx, method, category, onEdit, onDelete }: Props) {
-  const directionColor = tx.transaction_direction === 'income' ? 'green' : tx.transaction_direction === 'credit' ? 'blue' : 'red';
+  const cashImpact = cashImpactForTransaction(method?.type, tx.transaction_direction);
+  const directionColor = !cashImpact.isSupported ? 'gray' : cashImpact.displaySign === '+' ? 'green' : 'red';
   return (
     <li className="flex items-center gap-2 py-2 border-b last:border-0 text-sm">
       <div className="flex-1 min-w-0">
@@ -34,7 +36,9 @@ export default function TransactionRow({ tx, method, category, onEdit, onDelete 
         </div>
       </div>
       <Badge color={directionColor}>
-        {tx.transaction_direction === 'income' ? '+' : '-'}€{fmt(tx.amount)}
+        {cashImpact.isSupported
+          ? `${cashImpact.label} ${cashImpact.displaySign}€${fmt(tx.amount)}`
+          : `${cashImpact.label} · €${fmt(tx.amount)} (no cash impact)`}
       </Badge>
       <div className="flex gap-1 shrink-0">
         <Button variant="ghost" className="text-xs px-1.5 min-w-[2rem]" onClick={onEdit} title="Edit">

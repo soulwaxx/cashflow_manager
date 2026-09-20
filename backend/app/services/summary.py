@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from sqlalchemy.orm import Session
 from app.models.transaction import Transaction
 from app.models.transfer import Transfer
@@ -8,6 +10,7 @@ from app.services.bank_balance import (
     compute_bank_balances_for_year,
     _bulk_load,
 )
+from app.services.transaction_semantics import transaction_semantics
 
 
 _STAMP_DUTY_THRESHOLD = 77.47
@@ -43,6 +46,28 @@ def _compute_stamp_duty(month_first: str, all_txs: list[Transaction], stamp_duty
     return total
 
 
+def _transaction_summary_totals(
+    transactions: list[Transaction], payment_methods: dict[str, PaymentMethod]
+) -> tuple[float, dict[str, float]]:
+    """Aggregate incomes and signed net outcomes from the shared direction matrix."""
+    income = Decimal("0")
+    outcomes: dict[str, Decimal] = {}
+    for tx in transactions:
+        payment_method = payment_methods.get(tx.payment_method_id)
+        if not payment_method:
+            continue
+        semantics = transaction_semantics(payment_method.type, tx.transaction_direction)
+        if not semantics:
+            continue
+        amount = Decimal(str(tx.amount))
+        income += amount * semantics.income_delta
+        if semantics.outcome_delta:
+            name = payment_method.name
+            outcomes[name] = outcomes.get(name, Decimal("0")) + amount * semantics.outcome_delta
+
+    return float(income), {name: float(amount) for name, amount in outcomes.items()}
+
+
 def monthly_summary(user_id: str, year: int, month: int, db: Session) -> dict:
     """Build the single-month summary payload.
 
@@ -64,7 +89,7 @@ def monthly_summary(user_id: str, year: int, month: int, db: Session) -> dict:
         start_year, start_month = int(start_parts[0]), int(start_parts[1])
         start_month_first = f"{start_year:04d}-{start_month:02d}-01"
 
-        mbh_rows, mbh_dates, pm_by_id, txs_by_month, transfers_by_month = _bulk_load(
+        mbh_rows, mbh_dates, pm_by_id, card_links_by_card, txs_by_month, transfers_by_month = _bulk_load(
             user_id, start_month_first, month_first, db
         )
 
@@ -76,6 +101,7 @@ def monthly_summary(user_id: str, year: int, month: int, db: Session) -> dict:
                 "mbh_rows": mbh_rows,
                 "mbh_dates": mbh_dates,
                 "pm_by_id": pm_by_id,
+                "card_links_by_card": card_links_by_card,
                 "txs_by_month": txs_by_month,
                 "transfers_by_month": transfers_by_month,
             },
@@ -97,14 +123,7 @@ def monthly_summary(user_id: str, year: int, month: int, db: Session) -> dict:
             Transfer.billing_month == month_first
         ).all()
 
-    total_income = sum(float(t.amount) for t in txs if t.transaction_direction == "income")
-
-    by_method: dict[str, float] = {}
-    for tx in txs:
-        if tx.transaction_direction in ("debit", "credit"):
-            pm = pm_by_id.get(tx.payment_method_id)
-            name = pm.name if pm else tx.payment_method_id
-            by_method[name] = by_method.get(name, 0) + float(tx.amount)
+    total_income, by_method = _transaction_summary_totals(txs, pm_by_id)
 
     transfers_out = sum(float(t.amount) for t in transfers if t.from_account_type == "bank")
     transfers_in = sum(float(t.amount) for t in transfers if t.to_account_type == "bank")
@@ -151,10 +170,14 @@ def year_monthly_summaries(user_id: str, year: int, db: Session) -> list[dict]:
         txs_by_month[m].append(tx)
 
     pm_ids = {tx.payment_method_id for tx in all_txs}
-    pm_names: dict[str, str] = {}
+    pm_by_id: dict[str, PaymentMethod] = {}
     if pm_ids:
-        pms = db.query(PaymentMethod).filter(PaymentMethod.id.in_(pm_ids)).all()
-        pm_names = {pm.id: pm.name for pm in pms}
+        pms = (
+            db.query(PaymentMethod)
+            .filter(PaymentMethod.id.in_(pm_ids), PaymentMethod.user_id == user_id)
+            .all()
+        )
+        pm_by_id = {pm.id: pm for pm in pms}
 
     all_transfers = (
         db.query(Transfer)
@@ -178,13 +201,7 @@ def year_monthly_summaries(user_id: str, year: int, db: Session) -> list[dict]:
     results = []
     for month in range(1, 13):
         txs = txs_by_month[month]
-        total_income = sum(float(t.amount) for t in txs if t.transaction_direction == "income")
-
-        by_method: dict[str, float] = {}
-        for tx in txs:
-            if tx.transaction_direction in ("debit", "credit"):
-                name = pm_names.get(tx.payment_method_id, tx.payment_method_id)
-                by_method[name] = by_method.get(name, 0) + float(tx.amount)
+        total_income, by_method = _transaction_summary_totals(txs, pm_by_id)
 
         transfers = transfers_by_month[month]
         transfers_out = sum(float(t.amount) for t in transfers if t.from_account_type == "bank")

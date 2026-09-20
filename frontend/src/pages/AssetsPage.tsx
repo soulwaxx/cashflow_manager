@@ -5,7 +5,7 @@ import { Button } from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
-import { userSettingsApi } from '../api/userSettings';
+import { accountsApi } from '../api/accounts';
 import type { Asset } from '../types/api';
 import { fmt } from '../utils/format';
 
@@ -16,7 +16,7 @@ function AssetRow({ asset, year }: { asset: Asset; year: number }) {
 
   const { mutate, isPending } = useMutation({
     mutationFn: (amount: number | null) =>
-      assetsApi.setOverride(year, asset.asset_type, asset.asset_name, amount),
+      assetsApi.setOverride(year, asset.asset_type, asset.account_id ?? asset.asset_name, amount),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assets', year] });
       setEditing(false);
@@ -64,18 +64,20 @@ export default function AssetsPage() {
   const [newBalance, setNewBalance] = useState('');
 
   const qc = useQueryClient();
+  const asOf = `${year}-12-01`;
 
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ['assets', year],
-    queryFn: () => assetsApi.year(year),
+    queryKey: ['assets', year, asOf],
+    queryFn: () => assetsApi.year(year, asOf),
   });
 
   const { mutate: addAccount, isPending: adding } = useMutation({
     mutationFn: () =>
-      userSettingsApi.upsert([{
-        key: `opening_${newType}_balance_${newName.trim()}`,
-        value: newBalance || '0',
-      }]),
+      accountsApi.create({
+        type: newType,
+        name: newName.trim(),
+        opening_balance: parseFloat(newBalance) || 0,
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['assets', year] });
       setAddOpen(false);
@@ -121,7 +123,7 @@ export default function AssetsPage() {
             </thead>
             <tbody>
               {assets.map((a) => (
-                <AssetRow key={`${a.asset_type}-${a.asset_name}`} asset={a} year={year} />
+                <AssetRow key={a.account_id ?? `${a.asset_type}-${a.asset_name}`} asset={a} year={year} />
               ))}
             </tbody>
           </table>

@@ -13,6 +13,34 @@ def test_summary_year_returns_12_months(client):
     assert r.status_code == 200
     assert len(r.json()) == 12
 
+@pytest.mark.parametrize("month", [1, 12])
+def test_summary_accepts_boundary_months(client, month):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/2026/{month}")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("month", [0, 13])
+def test_summary_rejects_out_of_range_months(client, month):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/2026/{month}")
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("year", [2000, 2100])
+def test_summary_accepts_supported_year_boundaries(client, year):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/{year}")
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("year", [1999, 2101])
+def test_summary_rejects_out_of_range_years(client, year):
+    _setup(client)
+    response = client.get(f"/api/v1/summary/{year}")
+    assert response.status_code == 422
+
+
 def test_summary_month_contains_bank_balance(client):
     _setup(client)
     r = client.get("/api/v1/summary/2026/1")
@@ -71,8 +99,9 @@ def test_year_summary_stamp_duty_credit_card(client):
     _setup(client)
 
     # Create a credit card with stamp duty enabled
+    bank_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["type"] == "bank")
     r = client.post("/api/v1/payment-methods", json={
-        "name": "StampCC", "type": "credit_card", "has_stamp_duty": True
+        "name": "StampCC", "type": "credit_card", "linked_bank_id": bank_id, "has_stamp_duty": True
     })
     assert r.status_code == 200
     card_id = r.json()["id"]
@@ -178,6 +207,61 @@ def test_monthly_summary_no_double_query(client):
     assert data["outcomes_by_method"].get("MyBank") == pytest.approx(800.0)
     assert data["transfers_out_bank"] == pytest.approx(300.0)
     assert data["transfers_in_bank"] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    ("payment_method_type", "direction", "expected_balance", "expected_income", "expected_outcome"),
+    [
+        ("bank", "income", 5100.0, 100.0, 0.0),
+        ("bank", "debit", 4900.0, 0.0, 100.0),
+        ("debit_card", "debit", 4900.0, 0.0, 100.0),
+        ("debit_card", "credit", 5100.0, 0.0, -100.0),
+        ("credit_card", "debit", 4900.0, 0.0, 100.0),
+        ("credit_card", "credit", 4900.0, 0.0, 100.0),
+        ("revolving", "debit", 4900.0, 0.0, 100.0),
+        ("revolving", "credit", 4900.0, 0.0, 100.0),
+        ("prepaid", "income", 5000.0, 100.0, 0.0),
+        ("prepaid", "debit", 5000.0, 0.0, 100.0),
+        ("cash", "income", 5000.0, 100.0, 0.0),
+        ("cash", "debit", 5000.0, 0.0, 100.0),
+    ],
+)
+def test_summary_and_bank_balance_follow_transaction_matrix(
+    client,
+    payment_method_type,
+    direction,
+    expected_balance,
+    expected_income,
+    expected_outcome,
+):
+    """Valid matrix entries have matching main-bank and summary effects."""
+    _setup(client)
+    methods = client.get("/api/v1/payment-methods").json()
+    bank_id = next(method["id"] for method in methods if method["type"] == "bank")
+    payment_method = next(
+        (method for method in methods if method["type"] == payment_method_type),
+        None,
+    )
+    if payment_method is None:
+        payload = {"name": f"{payment_method_type}-method", "type": payment_method_type}
+        if payment_method_type in {"debit_card", "credit_card", "revolving"}:
+            payload["linked_bank_id"] = bank_id
+        payment_method = client.post("/api/v1/payment-methods", json=payload).json()
+
+    response = client.post("/api/v1/transactions", json={
+        "date": "2026-01-15", "detail": "Matrix transaction", "amount": 100,
+        "payment_method_id": payment_method["id"],
+        "transaction_direction": direction,
+    })
+    assert response.status_code == 200
+
+    billing_month = response.json()["billing_month"]
+    year, month, _ = billing_month.split("-")
+    summary = client.get(f"/api/v1/summary/{year}/{int(month)}").json()
+
+    assert summary["bank_balance"] == pytest.approx(expected_balance)
+    assert summary["incomes"] == pytest.approx(expected_income)
+    assert summary["outcomes_by_method"].get(payment_method["name"], 0.0) == pytest.approx(expected_outcome)
 
 
 def test_monthly_summary_returns_stamp_duty_field(client):

@@ -14,12 +14,12 @@ CashFlow Manager is a self-hosted, multi-user personal-finance web app. The back
 6. Authentication is an `HttpOnly` JWT cookie. Almost every domain row is user-owned; authorization is enforced by filtering with the authenticated `user_id`, not by roles.
 7. Transactions store both occurrence `date` and derived first-of-month `billing_month`. Recurrences are materialized rows linked to a root by `parent_transaction_id`/`parent_transfer_id`; they are not schedules evaluated at read time.
 
-Production startup currently invokes migrations in both `start.sh` and FastAPI lifespan. Preserve this behavior unless migration ownership is deliberately changed and container startup is retested.
+FastAPI lifespan is the sole automatic migration owner. `start.sh` only launches Uvicorn; direct Alembic commands and concurrent app startups must not overlap against the same SQLite database.
 
 ## Directory ownership
 
-- `backend/app/routers/`: transport, dependency injection, ownership checks, status codes. Keep multi-step financial rules in services when they are reused or independently testable.
-- `backend/app/schemas/`: request/response validation. Add cross-field validation here before invalid values reach financial services.
+- `backend/app/routers/`: transport, dependency injection, ownership checks, status codes, and small endpoint-specific request models. Keep multi-step financial rules in services when they are reused or independently testable.
+- `backend/app/schemas/`: shared and domain request/response models. Add cross-field validation here before invalid values reach financial services; router-local models are acceptable for small endpoint-only contracts.
 - `backend/app/services/`: billing, recurrence, bank balance, summaries, analytics, assets, salary/tax, forecasts, auth/OIDC, and seed logic.
 - `backend/app/models/`: ORM schema. Import every new model in `models/__init__.py` so tests and Alembic register it.
 - `backend/alembic/versions/`: ordered schema/data migrations. Model changes require a reviewed migration; do not use `Base.metadata.create_all()` as the production migration path.

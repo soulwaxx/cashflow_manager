@@ -6,9 +6,9 @@ interface CreateBody {
   detail: string;
   amount: number;
   from_account_type: Transfer['from_account_type'];
-  from_account_name: string;
+  from_account_id: string;
   to_account_type: Transfer['to_account_type'];
-  to_account_name: string;
+  to_account_id: string;
   recurrence_months?: number;
   notes?: string | null;
 }

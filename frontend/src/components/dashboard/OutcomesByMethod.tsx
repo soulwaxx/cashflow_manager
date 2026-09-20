@@ -8,7 +8,7 @@ export default function OutcomesByMethod({ summary, isLoading }: Props) {
   const methods = Object.entries(summary?.outcomes_by_method ?? {});
   return (
     <div className="bg-surface rounded-lg border border-line p-6">
-      <p className="text-sm text-muted mb-3">Outcomes by payment method</p>
+      <p className="text-sm text-muted mb-3">Net purchases and card payments</p>
       {methods.length === 0 ? (
         <p className="text-faint text-sm">No outcomes this month</p>
       ) : (
@@ -16,7 +16,9 @@ export default function OutcomesByMethod({ summary, isLoading }: Props) {
           {methods.map(([method, amount]) => (
             <li key={method} className="flex justify-between text-sm">
               <span className="text-primary">{method}</span>
-              <span className="font-medium text-red-500">-€{fmt(amount)}</span>
+              <span className={`font-medium ${amount < 0 ? 'text-green-600' : 'text-red-500'}`}>
+                {amount < 0 ? '+' : '-'}€{fmt(Math.abs(amount))}
+              </span>
             </li>
           ))}
         </ul>

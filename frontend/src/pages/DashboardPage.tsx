@@ -11,6 +11,7 @@ export default function DashboardPage() {
   const [current, setCurrent] = useState(() => new Date());
   const year = current.getFullYear();
   const month = current.getMonth() + 1;
+  const asOf = `${year}-${String(month).padStart(2, '0')}-01`;
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ['summary', year, month],
@@ -18,8 +19,8 @@ export default function DashboardPage() {
   });
 
   const { data: assets, isLoading: assetsLoading } = useQuery({
-    queryKey: ['assets', year],
-    queryFn: () => assetsApi.year(year),
+    queryKey: ['assets', year, asOf],
+    queryFn: () => assetsApi.year(year, asOf),
   });
 
   return (
