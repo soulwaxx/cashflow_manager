@@ -1,4 +1,4 @@
-# Development Guide
+# Development guide
 
 ## Prerequisites
 
@@ -7,11 +7,11 @@
 | Python | 3.14+ |
 | Node.js | 24+ |
 | npm | 10+ |
-| Docker + Compose | Optional — for running the full stack containerized |
+| Docker Engine and Compose | Optional. Use them to run the full stack in containers. |
 
 ---
 
-## Local Setup (Recommended)
+## Local setup
 
 Run the backend and frontend as separate processes with hot-reload.
 
@@ -27,7 +27,7 @@ source .venv/bin/activate   # Windows: .venv\Scripts\activate
 # Install dependencies
 python -m pip install -r requirements.txt
 
-# Settings reads .env from the process working directory
+# The backend reads .env from the process working directory
 cp ../.env.example .env
 mkdir -p data
 # Edit backend/.env and set DB_PATH=./data/cashflow.db
@@ -36,14 +36,14 @@ mkdir -p data
 uvicorn app.main:app --reload --port 8000
 ```
 
-The API is available at `http://localhost:8000`. Swagger UI at `http://localhost:8000/docs`.
+The API is available at `http://localhost:8000`. The Swagger UI is available at `http://localhost:8000/docs`.
 
 ### Frontend
 
 ```bash
 cd frontend
 
-npm install
+npm ci
 npm run dev
 ```
 
@@ -51,9 +51,9 @@ The app is available at `http://localhost:3000`. Vite proxies `/api/*` requests 
 
 ---
 
-## Docker Compose (Alternative)
+## Docker Compose
 
-Builds and runs the backend and frontend as separate containers. No hot-reload.
+Docker Compose builds and runs the backend and frontend as separate containers. This setup does not provide hot reload.
 
 ```bash
 # From repo root
@@ -68,7 +68,7 @@ The root `data/` directory is bind-mounted into the backend container.
 
 ---
 
-## Environment Variables (Development)
+## Development environment variables
 
 For the root Docker Compose workflow, copy `.env.example` to `.env` at the repository root:
 
@@ -89,16 +89,16 @@ The development template intentionally uses insecure keys with `DEVELOPMENT_MODE
 
 ---
 
-## Running Tests
+## Run tests
 
 ### Backend
 
 ```bash
 cd backend
-pytest                                          # run all tests
-pytest tests/test_auth.py -v                   # run a single file
-pytest tests/test_auth.py::test_register -v    # run a single test
-pytest --cov --cov-report=term-missing         # with coverage
+python -m pytest                                          # run all tests
+python -m pytest tests/test_auth.py -v                   # run one file
+python -m pytest tests/test_auth.py::test_register -v    # run one test
+python -m pytest --cov --cov-report=term-missing         # run with coverage
 ```
 
 Tests use an in-memory SQLite database. `conftest.py` creates a fresh DB per test and overrides the `get_db` FastAPI dependency.
@@ -115,7 +115,7 @@ npm test -- tests/pages/TransactionsPage.test.tsx   # single file
 Tests use Vitest + Testing Library. API calls are mocked with MSW (Mock Service Worker).
 In jsdom, logout redirects still emit harmless "navigation to another Document" warnings because the browser environment is mocked.
 
-### E2E (Playwright, manual only)
+### End-to-end tests (Playwright, manual only)
 
 ```bash
 # Requires the full app running (backend + frontend)
@@ -128,9 +128,11 @@ npm run test:ui          # interactive mode
 
 ---
 
-## Database Migrations
+## Database migrations
 
-> **Migration ownership and target path:** FastAPI lifespan is the sole automatic migration owner and applies migrations before serving requests. Direct Alembic CLI commands resolve `DB_PATH` through the same application settings as FastAPI. Settings read `.env` from the process working directory, so commands run from `backend/` use `backend/.env`; alternatively export `DB_PATH` explicitly. Do not run a direct Alembic command or start multiple app processes concurrently against the same SQLite database.
+> **Migration ownership and target path:** FastAPI lifespan is the sole automatic migration owner and applies migrations before serving requests. Direct Alembic CLI commands resolve `DB_PATH` through the same application settings as FastAPI.
+>
+> Settings read `.env` from the process working directory, so commands run from `backend/` use `backend/.env`. You can export `DB_PATH` explicitly instead. Do not run a direct Alembic command or start multiple application processes concurrently against the same SQLite database.
 
 ```bash
 cd backend
@@ -148,11 +150,11 @@ alembic current
 alembic downgrade -1
 ```
 
-Migration files live in `backend/alembic/versions/`. Always review auto-generated migrations before committing — Alembic may not detect all changes correctly (e.g. column type changes).
+Migration files live in `backend/alembic/versions/`. Review every generated migration before committing. Alembic does not detect every change, including some column-type changes.
 
 ---
 
-## Project Structure
+## Project structure
 
 ```
 cashflow-manager/
@@ -197,7 +199,7 @@ cashflow-manager/
 
 ---
 
-## Code Conventions
+## Code conventions
 
 - **Conventional PR titles** are required. CI validates the PR title (including an optional scope and `!`); squash merging uses that title as the commit message consumed by semantic-release.
   - `feat:` → minor version bump
@@ -211,16 +213,16 @@ cashflow-manager/
 
 ---
 
-## Common Issues
+## Common issues
 
 **`alembic upgrade head` fails with "table already exists"**
-The DB was created before migrations were applied. Delete `data/cashflow.db` and re-run.
+The database was created outside the migration history. Delete `data/cashflow.db` only when it is a disposable development database. Back up any database that contains data you need, then inspect its schema and Alembic revision before changing it.
 
 **Frontend shows `Network Error` on API calls**
 Ensure the backend is running on port 8000 and Vite's proxy is active (run `npm run dev`, not a static build).
 
 **`ALLOWED_ORIGINS` CORS error in browser**
-In dev, `ALLOWED_ORIGINS` must include `http://localhost:3000`. Check your `.env`.
+In development, `ALLOWED_ORIGINS` must include `http://localhost:3000`. Check your `.env`.
 
-**Container permission denied on `cashflow.db`**
-`APP_UID`/`APP_GID` in `deploy/.env` must match the owner of `deploy/data/`. Run `id -u && id -g` and update the values.
+**Production container reports permission denied for `cashflow.db`**
+`APP_UID` and `APP_GID` in `deploy/.env` must match the owner of `deploy/data/`. Run `id -u` and `id -g`, then update both values.

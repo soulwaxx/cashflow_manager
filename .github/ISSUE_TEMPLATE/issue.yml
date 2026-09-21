@@ -1,0 +1,117 @@
+name: Project issue
+description: Report a bug, propose an improvement, or define a work item.
+title: "[Issue]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for contributing. Search existing issues first. Give contributors and AI agents enough detail to verify and complete the work.
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Issue type
+      description: Select the option that best describes this issue.
+      options:
+        - Bug
+        - Feature request
+        - Documentation
+        - Maintenance or refactoring
+        - Testing
+        - Deployment or infrastructure
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Describe the problem or requested change.
+      placeholder: What is happening, and why does it matter?
+    validations:
+      required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior
+      description: Describe what happens today. For bugs, include exact reproduction steps.
+      placeholder: |
+        1. Go to ...
+        2. Perform ...
+        3. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: Describe the expected result in the user interface and financial calculations.
+      placeholder: What should happen instead?
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: affected-areas
+    attributes:
+      label: Affected areas
+      description: Select each affected area.
+      options:
+        - label: Backend or API
+        - label: Frontend or user interface
+        - label: Database or migrations
+        - label: Authentication or authorization
+        - label: Financial calculations or forecasts
+        - label: Deployment or configuration
+        - label: Documentation
+        - label: Unknown or not applicable
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance criteria
+      description: List the observable results that mark this issue complete.
+      placeholder: |
+        - [ ] The change produces the expected behavior.
+        - [ ] Relevant automated tests pass.
+        - [ ] Relevant documentation describes the new behavior or setup.
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Supporting evidence
+      description: Add logs, screenshots, error messages, sample data, or links. Remove secrets and personal financial information.
+      placeholder: Paste sanitized evidence or drag files here.
+
+  - type: textarea
+    id: implementation-notes
+    attributes:
+      label: Implementation notes
+      description: Share likely files, constraints, dependencies, or approaches. Leave blank if unknown.
+      placeholder: Relevant modules, API routes, data migrations, related issues, or known risks.
+
+  - type: dropdown
+    id: willingness
+    attributes:
+      label: Contribution
+      description: Indicate whether you intend to work on this issue.
+      options:
+        - I can submit a pull request
+        - I can help investigate or test
+        - I am only reporting or requesting this
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and did not find a duplicate.
+          required: true
+        - label: I removed secrets and personal financial information from this report.
+          required: true

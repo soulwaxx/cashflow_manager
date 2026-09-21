@@ -4,152 +4,144 @@
 [![Docker](https://img.shields.io/github/v/release/soulwaxx/cashflow_manager?label=ghcr.io&logo=docker)](https://github.com/soulwaxx/cashflow_manager/pkgs/container/cashflow-manager)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A self-hosted personal cash flow manager. Track transactions, transfers, recurring expenses, salary, assets, and monthly forecasts — all in a single Docker container.
-
-Multi-user with per-user data isolation. Supports both local (username/password) and OIDC authentication.
-
----
+CashFlow Manager is a self-hosted, multi-user app for personal finances. It runs in one Docker container and isolates each user's data. Users sign in with a password or OpenID Connect (OIDC).
 
 ## Features
 
-- **Transaction tracking** — income and expenses with categories, payment methods, and tags
-- **Recurring transactions** — weekly, monthly, yearly with configurable end dates
-- **Transfers** — move money between your own accounts
-- **Asset tracking** — track value of savings, investments, and property
-- **Monthly summary** — bank balance, net cashflow, category breakdown
-- **Analytics** — spending trends, category charts, time-range filters
-- **Salary & tax calculator** — Italian tax law (IRPEF + INPS), net-from-gross calculation
-- **Forecasting** — project future bank balance based on recurring commitments
-- **Onboarding wizard** — guided setup for accounts, payment methods, and salary
-- **Multi-user** — each user sees only their own data
-- **OIDC support** — integrate with any OIDC provider (Keycloak, Auth0, Authentik, etc.)
-- **Responsive** — works on desktop and mobile
+- **Transactions:** Record income, purchases, refunds, categories, payment methods, and tags.
+- **Recurring transactions:** Create weekly, monthly, or yearly transactions with optional end dates.
+- **Transfers:** Move money between your accounts.
+- **Assets:** Track savings, investments, pensions, and property.
+- **Monthly summaries:** Review bank balances, net cash flow, and category totals.
+- **Analytics:** Compare spending trends and category totals over a selected period.
+- **Salary and tax:** Calculate net salary under Italian personal income tax (IRPEF) and social security (INPS) rules.
+- **Forecasts:** Project future bank balances from recurring commitments.
+- **Onboarding:** Configure accounts, payment methods, and salary through a guided setup.
+- **Responsive interface:** Use the app on desktop and mobile devices.
 
----
+## Production quick start
 
-## Quick Start (Production)
+You need Docker Engine 24 or newer and Docker Compose v2.
 
-The production image bundles the React frontend (served by Nginx) and the FastAPI backend (Uvicorn) in a single container.
+1. Clone the repository and enter the deployment directory.
 
-```bash
-# 1. Clone the deploy directory (or just copy these two files)
-git clone https://github.com/soulwaxx/cashflow_manager.git
-cd cashflow_manager/deploy
+   ```bash
+   git clone https://github.com/soulwaxx/cashflow_manager.git
+   cd cashflow_manager/deploy
+   ```
 
-# 2. Create your environment file from the template
-cp .env.example .env
+2. Create the environment file.
 
-# 3. Generate secrets and edit .env
-python3 -c "import secrets; print(secrets.token_hex(32))"   # SECRET_KEY
-python3 -c "import secrets; print(secrets.token_hex(32))"   # SESSION_ENCRYPTION_KEY
-#   Also set APP_UID/APP_GID to your host user (run: id -u && id -g)
+   ```bash
+   cp .env.example .env
+   ```
 
-# 4. Start
-docker compose up -d
+3. Generate two secrets.
 
-# App is now available at http://localhost:80
-```
+   ```bash
+   # SECRET_KEY
+   python3 -c "import secrets; print(secrets.token_hex(32))"
 
-The `data/` directory next to `docker-compose.yml` holds the SQLite database — back it up to preserve your data.
+   # SESSION_ENCRYPTION_KEY
+   python3 -c "import secrets; print(secrets.token_hex(32))"
+   ```
 
-See [docs/deployment.md](docs/deployment.md) for reverse proxy setup, OIDC configuration, and upgrade instructions.
+4. Edit `.env` and set the following values:
 
----
+   - Set `SECRET_KEY` and `SESSION_ENCRYPTION_KEY` to the generated values.
+   - Set `APP_UID` and `APP_GID` to the output of `id -u` and `id -g`.
+   - Set `ALLOWED_ORIGINS` to the public origin that serves the app.
+
+5. Start the container.
+
+   ```bash
+   docker compose up -d
+   ```
+
+The app listens at `http://localhost`. The `deploy/data/` directory contains the SQLite database. Follow the [backup procedure](docs/deployment.md#backup-and-restore) before upgrades or maintenance.
+
+See the [deployment guide](docs/deployment.md) for HTTPS, reverse proxies, OIDC, upgrades, and restoration.
 
 ## Architecture
 
-```
+```text
 Single Docker container (port 8080)
-├── Nginx          — serves React SPA, proxies /api/* to Uvicorn
-└── Uvicorn        — FastAPI backend
+├── Nginx: serves the React single-page application and proxies /api/*
+└── Uvicorn: runs the FastAPI backend
         │
-        └── SQLite  (/app/data/cashflow.db, bind-mounted from host)
+        └── SQLite: /app/data/cashflow.db, bind-mounted from the host
 ```
 
-Nginx and Uvicorn are managed by `supervisord` inside the container. On startup, Alembic migrations run automatically before the API becomes available.
+`supervisord` manages Nginx and Uvicorn. FastAPI applies Alembic migrations before it accepts requests.
 
-For local development, the frontend and backend run as separate services with hot-reload. See [docs/development.md](docs/development.md).
-
-Full architecture details: [docs/architecture.md](docs/architecture.md).
-
----
+Development runs the frontend and backend as separate services. Read [docs/architecture.md](docs/architecture.md) for the system design and data flow.
 
 ## Configuration
 
-All configuration is via environment variables. Copy `deploy/.env.example` to `deploy/.env` and edit:
+Copy `deploy/.env.example` to `deploy/.env` and set the deployment values.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SECRET_KEY` | — | **Required.** JWT signing key (32+ random bytes) |
-| `SESSION_ENCRYPTION_KEY` | — | **Required.** AES-GCM key for OIDC session cookies (32 random bytes as hex) |
-| `APP_UID` / `APP_GID` | `1000` | Host UID/GID that owns the `data/` directory |
-| `DB_PATH` | `/app/data/cashflow.db` | Path inside container |
-| `JWT_EXPIRE_DAYS` | `30` | Token lifetime |
-| `BASIC_AUTH_ENABLED` | `true` | Enable username/password registration and login |
-| `OIDC_ENABLED` | `false` | Enable OIDC login |
-| `ALLOWED_ORIGINS` | `http://localhost:3000` | CORS allowed origins (comma-separated) |
-| `TZ` | `Europe/Rome` | Container timezone |
+| `SECRET_KEY` | Required | JWT signing key with at least 32 random bytes |
+| `SESSION_ENCRYPTION_KEY` | Required | OIDC session-encryption key containing 64 hexadecimal characters |
+| `APP_UID` | `1000` | Host user ID that owns `deploy/data/` |
+| `APP_GID` | `1000` | Host group ID that owns `deploy/data/` |
+| `DB_PATH` | `/app/data/cashflow.db` | Database path inside the container |
+| `JWT_EXPIRE_DAYS` | `30` | Authentication token lifetime in days |
+| `BASIC_AUTH_ENABLED` | `true` | Turns password registration and sign-in on or off |
+| `OIDC_ENABLED` | `false` | Turns OIDC sign-in on or off |
+| `ALLOWED_ORIGINS` | `http://localhost:3000` | Comma-separated browser origins allowed by the API |
+| `TZ` | `Europe/Rome` | Container time zone |
 
-Full reference with OIDC variables: [docs/configuration.md](docs/configuration.md).
-
----
+Read [docs/configuration.md](docs/configuration.md) for every setting and the required OIDC variables.
 
 ## Authentication
 
-Two modes, independently configurable:
+CashFlow Manager supports two authentication methods:
 
-- **Basic auth** — self-registration with email + password, bcrypt-hashed
-- **OIDC** — any OIDC-compliant provider; users are matched by provider subject (`oidc_sub`) and are not auto-linked to existing password accounts by email
+- **Password authentication:** Users register with an email address and password. The backend stores bcrypt password hashes.
+- **OpenID Connect:** Users sign in through an OIDC provider such as Authentik, Auth0, or Keycloak.
 
-Both can be active simultaneously. See [docs/authentication.md](docs/authentication.md).
-
----
+You can turn on either method or both methods. CashFlow Manager matches OIDC users by provider subject and does not link accounts by email. Read [docs/authentication.md](docs/authentication.md) for provider setup and account behavior.
 
 ## Development
 
-Prerequisites: Python 3.14+, Node 24+, Docker (optional).
+Create the backend environment and start Uvicorn:
 
 ```bash
-# Backend
 cd backend
-pip install -r requirements.txt
-alembic upgrade head
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install --requirement requirements.txt
+cp ../.env.example .env
+mkdir -p data
+# Set DB_PATH=./data/cashflow.db in backend/.env
 uvicorn app.main:app --reload --port 8000
-
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev          # Vite dev server at http://localhost:3000
-
-# Or run both via Docker Compose (separate containers, hot-reload not available)
-docker compose up
 ```
 
-Run tests:
+Start the frontend in a second terminal:
 
 ```bash
-# Backend
-cd backend && pytest
-
-# Frontend
-cd frontend && npm test
+cd frontend
+npm ci
+npm run dev
 ```
 
-Full guide: [docs/development.md](docs/development.md).
+The frontend runs at `http://localhost:3000` and proxies `/api` to the backend at `http://localhost:8000`. FastAPI applies pending migrations during startup.
 
----
+From the repository root, run the same checks as continuous integration (CI):
 
-## Deployment
+```bash
+cd backend
+python -m pytest --cov --cov-report=term-missing
 
-See [docs/deployment.md](docs/deployment.md) for:
+cd ../frontend
+npm run build
+npm test -- --coverage
+```
 
-- Production checklist
-- Reverse proxy (Nginx/Caddy/Traefik) examples
-- HTTPS/TLS setup
-- Upgrading to a new version
-- Backup and restore
-
----
+Read [docs/development.md](docs/development.md) for Docker Compose development, focused tests, migrations, and troubleshooting.
 
 ## License
 

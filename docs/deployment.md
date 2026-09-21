@@ -1,4 +1,4 @@
-# Deployment Guide
+# Deployment guide
 
 ## Prerequisites
 
@@ -8,12 +8,12 @@
 
 ---
 
-## Quick Deploy
+## Quick deployment
 
 ```bash
 cd deploy/
 cp .env.example .env
-# edit .env — at minimum set SECRET_KEY, SESSION_ENCRYPTION_KEY, APP_UID, APP_GID
+# Edit .env and set the required secrets, IDs, and ALLOWED_ORIGINS
 docker compose up -d
 ```
 
@@ -23,7 +23,7 @@ The `deploy/data/` directory holds the SQLite database. Back it up regularly.
 
 ---
 
-## Production Checklist
+## Production checklist
 
 - [ ] `SECRET_KEY` is a random 32-byte hex string (not the default)
 - [ ] `SESSION_ENCRYPTION_KEY` is a random 32-byte hex string (not the default)
@@ -40,7 +40,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 
 ---
 
-## Reverse Proxy
+## Reverse proxy
 
 ### Nginx
 
@@ -93,7 +93,7 @@ services:
 
 ## Upgrading
 
-`deploy/docker-compose.yml` tracks the `latest` GHCR image. To upgrade, pull the current image and restart:
+`deploy/docker-compose.yml` tracks the `latest` GitHub Container Registry (GHCR) image. To upgrade, pull the current image and restart:
 
 ```bash
 cd deploy/
@@ -101,7 +101,7 @@ docker compose pull
 docker compose up -d
 ```
 
-Alembic migrations run automatically on startup — no manual migration step is needed.
+FastAPI applies Alembic migrations during startup. You do not need a manual migration step.
 
 After a release, pull the repository if you need deployment configuration changes, then pull and restart:
 
@@ -114,43 +114,53 @@ docker compose up -d
 
 ---
 
-## Backup and Restore
+## Backup and restore
 
-The entire application state lives in one file:
+The SQLite database contains the persistent account and financial data. Deployment settings remain in `deploy/.env`.
 
-The database runs in SQLite's default rollback-journal mode, not WAL, so a plain `cp` while the app is running can capture a torn, inconsistent snapshot. Use `sqlite3`'s `.backup` command instead: it takes a transactionally consistent copy without stopping the stack.
+The database uses SQLite's default rollback journal instead of write-ahead logging (WAL). A plain `cp` while the app is running can capture an inconsistent snapshot. Use `sqlite3`'s `.backup` command instead: it takes a transactionally consistent copy without stopping the stack.
+
+Run these commands from the `deploy/` directory:
 
 ```bash
-# Backup (online, consistent)
-sqlite3 deploy/data/cashflow.db ".backup deploy/data/cashflow.db.bak"
-# or with timestamp:
-sqlite3 deploy/data/cashflow.db ".backup deploy/data/cashflow-$(date +%Y%m%d).db"
+# Backup (online and consistent)
+sqlite3 data/cashflow.db ".backup data/cashflow.db.bak"
+
+# Create a timestamped backup
+sqlite3 data/cashflow.db ".backup data/cashflow-$(date +%Y%m%d).db"
 
 # Restore
 docker compose down
-cp cashflow-20260101.db deploy/data/cashflow.db
+cp data/cashflow-20260101.db data/cashflow.db
 docker compose up -d
 ```
 
-For automated backups, consider a cron job or a tool like `litestream` for continuous replication.
+Use a cron job to run the `.backup` command on a schedule.
 
 ---
 
-## User Management
+## User management
 
-There is no admin panel. Users register themselves via the `/register` page when `BASIC_AUTH_ENABLED=true`. To force OIDC-only access or disable all password-based authentication, set `BASIC_AUTH_ENABLED=false`. That disables both `/register` and `/login`; OIDC sign-in continues to work if configured.
+CashFlow Manager has no administrator panel. Users register through `/register` when `BASIC_AUTH_ENABLED=true`.
 
-To delete a user, connect to the database directly:
+Set `BASIC_AUTH_ENABLED=false` to require OpenID Connect (OIDC) authentication. This setting disables both `/register` and `/login`; configured OIDC sign-in remains active.
+
+Users can delete their own accounts from **Settings > Account**. That path checks their credentials and deletes their user-owned data through the application.
+
+To remove another account directly, back up the database first. Then run these commands from the `deploy/` directory:
 
 ```bash
-sqlite3 deploy/data/cashflow.db "DELETE FROM users WHERE email = 'user@example.com';"
+docker compose down
+sqlite3 data/cashflow.db \
+  "PRAGMA foreign_keys = ON; DELETE FROM users WHERE email = 'user@example.com';"
+docker compose up -d
 ```
 
-All user-owned data (transactions, payment methods, etc.) will cascade-delete.
+`PRAGMA foreign_keys = ON` activates the foreign-key cascades for the SQLite command-line connection.
 
 ---
 
-## OIDC Setup
+## OIDC setup
 
 See [authentication.md](authentication.md) for the full OIDC configuration walkthrough.
 
@@ -166,7 +176,7 @@ OIDC_REDIRECT_URI=https://cashflow.example.com/api/v1/auth/oidc/callback
 
 ---
 
-## Container User Mapping
+## Container user mapping
 
 The container runs as the UID/GID supplied via `APP_UID` / `APP_GID` in `.env`. This must match the owner of the `deploy/data/` directory so the process can read and write the SQLite database.
 
@@ -187,6 +197,6 @@ If you see permission errors on startup, verify ownership:
 
 ```bash
 ls -la deploy/data/
-# should match APP_UID:APP_GID
+# The owner must match APP_UID:APP_GID
 chown -R 1000:1000 deploy/data/
 ```

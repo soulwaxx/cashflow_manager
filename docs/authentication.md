@@ -1,24 +1,24 @@
 # Authentication
 
-CashFlow Manager supports two authentication methods, independently configurable via environment variables. Both can be active simultaneously.
+CashFlow Manager supports password authentication and OpenID Connect (OIDC). You can configure each method independently or use both methods.
 
 ---
 
-## Basic Auth (Username/Password)
+## Password authentication
 
-Enabled when `BASIC_AUTH_ENABLED=true` (default).
+Password authentication is active when `BASIC_AUTH_ENABLED=true` (the default).
 
 ### Registration
 
-`POST /api/v1/auth/register` — public endpoint.
+`POST /api/v1/auth/register` is a public endpoint.
 
 ```json
 { "email": "user@example.com", "password": "secret" }
 ```
 
-Returns a `200` with an `access_token` httpOnly cookie set. Returns `409` if the email is already registered.
+A successful request returns `200` and sets an `access_token` cookie with the `HttpOnly` attribute. A duplicate email returns `409`.
 
-### Login
+### Sign in
 
 `POST /api/v1/auth/login`
 
@@ -26,12 +26,11 @@ Returns a `200` with an `access_token` httpOnly cookie set. Returns `409` if the
 { "email": "user@example.com", "password": "secret" }
 ```
 
-Returns `200` with `access_token` cookie. Returns `401` on invalid credentials.
-Returns `403` if `BASIC_AUTH_ENABLED=false`.
+A successful request returns `200` and sets the `access_token` cookie. Invalid credentials return `401`. Setting `BASIC_AUTH_ENABLED=false` makes the endpoint return `403`.
 
-### Passwords
+### Password storage
 
-Stored as bcrypt hashes (bcrypt with random salt). Never stored or logged in plaintext.
+The backend stores passwords as bcrypt hashes with random salts. It does not store or log plaintext passwords.
 
 ### Change password
 
@@ -51,13 +50,13 @@ The "Change password" button in **Settings → Account** is visible only to user
 
 ### Current user
 
-`GET /api/v1/auth/me` — returns the currently authenticated user.
+`GET /api/v1/auth/me` returns the authenticated user.
 
-Response includes `has_password` and `has_oidc` fields (see [UserOut fields](#userout-fields) below).
+The response includes `has_password` and `has_oidc` fields. See [UserOut fields](#userout-fields).
 
 ### Public auth config
 
-`GET /api/v1/auth/config` — public endpoint used by the login page to discover which sign-in methods are enabled.
+`GET /api/v1/auth/config` is a public endpoint. The login page uses it to determine which sign-in methods are active.
 
 Response:
 
@@ -67,15 +66,15 @@ Response:
 
 ### Disabling
 
-Setting `BASIC_AUTH_ENABLED=false` disables both `/register` and `/login`. OIDC sign-in is unaffected. Password-based users cannot authenticate with email/password again until the setting is re-enabled.
+Setting `BASIC_AUTH_ENABLED=false` disables both `/register` and `/login`. OIDC sign-in remains active when configured. Password users cannot sign in again until you set `BASIC_AUTH_ENABLED=true`.
 
 ---
 
 ## OIDC
 
-Enabled when `OIDC_ENABLED=true`. Requires a configured OIDC provider.
+Set `OIDC_ENABLED=true` to activate OIDC. This method requires a configured OIDC provider.
 
-### Required env vars
+### Required environment variables
 
 ```env
 OIDC_ENABLED=true
@@ -95,37 +94,37 @@ Register a confidential client in your OIDC provider with:
 
 The application discovers provider endpoints automatically from `{OIDC_ISSUER_URL}/.well-known/openid-configuration`.
 
-### Login flow
+### Sign-in flow
 
-The login page reads `GET /api/v1/auth/config` and only shows the SSO entrypoint when `oidc_enabled=true`. When `basic_auth_enabled=false`, the email/password form is hidden and the page explains that password sign-in is disabled for the instance.
+The sign-in page reads `GET /api/v1/auth/config` and shows the single sign-on (SSO) entry point when `oidc_enabled=true`. When `basic_auth_enabled=false`, it hides the password form and states that password sign-in is disabled.
 
-1. User clicks "Sign in with SSO"
-2. Browser redirects to `GET /api/v1/auth/oidc/login` → backend redirects to provider authorization endpoint
-3. User authenticates at the provider
-4. Provider redirects to `OIDC_REDIRECT_URI` with an authorization code
-5. Backend exchanges the code for tokens, validates the ID token, matches the user by `oidc_sub`, and creates a new user row if that provider subject has not been seen before
-6. Two httpOnly cookies are set:
-   - `access_token` — JWT (same as basic auth)
-   - `oidc_id_token` — AES-GCM encrypted raw ID token (used for RP-initiated logout)
+1. The user selects **Sign in with SSO**.
+2. The browser requests `GET /api/v1/auth/oidc/login` and redirects to the provider authorization endpoint.
+3. The user authenticates with the provider.
+4. The provider sends an authorization code to `OIDC_REDIRECT_URI`.
+5. The backend exchanges the code for tokens, validates the ID token, and matches the user by `oidc_sub`. It creates a user when the provider subject does not match an existing account.
+6. The backend sets two cookies with the `HttpOnly` attribute:
+   - `access_token`: JSON Web Token (JWT) used for application authentication
+   - `oidc_id_token`: encrypted raw ID token used for provider logout
 
 ### Logout flow
 
 Two logout entrypoints exist:
 
-- `POST /api/v1/auth/logout` — general logout endpoint used by API clients
-- `GET /api/v1/auth/oidc/logout` — explicit browser redirect entrypoint
+- `POST /api/v1/auth/logout`: General logout endpoint used by API clients
+- `GET /api/v1/auth/oidc/logout`: Browser redirect entry point
 
-Both endpoints clear `access_token` and `oidc_id_token` cookies. When the provider advertises `end_session_endpoint` and the encrypted `oidc_id_token` cookie is present, they perform RP-initiated logout by redirecting to the provider with `id_token_hint` and `post_logout_redirect_uri`. If the provider does not support RP-initiated logout, or the OIDC session cookie is absent/expired, logout falls back to local-only sign-out.
+Both endpoints clear the `access_token` and `oidc_id_token` cookies. When the provider advertises `end_session_endpoint` and the encrypted `oidc_id_token` cookie is present, the backend redirects to the provider with `id_token_hint` and `post_logout_redirect_uri`. Otherwise, it performs a local sign-out.
 
-The logout redirect is built from `OIDC_REDIRECT_URI`: the backend derives an absolute `/login` return URL from that callback origin, preserves any existing provider query parameters on `end_session_endpoint`, and percent-encodes the injected logout parameters. If endpoint discovery, token decryption, or redirect construction fails, logout degrades to local-only sign-out instead of breaking the session flow.
+The backend builds the logout redirect from `OIDC_REDIRECT_URI`. It derives an absolute `/login` return URL from the callback origin, preserves existing query parameters on `end_session_endpoint`, and percent-encodes the added parameters. Failed endpoint discovery, token decryption, or redirect construction also results in a local sign-out.
 
 ---
 
-## Account Merging
+## Account matching
 
 Accounts are linked by OIDC subject (`oidc_sub`), not by email.
 
-The backend does not auto-link an incoming OIDC login to an existing password-auth account that happens to share the same email. This avoids accidental or malicious account takeover through an IdP-controlled email claim.
+The backend does not link an incoming OIDC login to an existing password account that shares the same email. This prevents account takeover through an identity-provider-controlled email claim.
 
 If the OIDC provider returns a verified email and that email is not already used by another account, it is stored on the OIDC user row. If the email is missing, unverified, or already claimed by another user, the account is still created and identified only by `oidc_sub`.
 
@@ -133,10 +132,10 @@ If the OIDC provider returns a verified email and that email is not already used
 
 ## JWT
 
-- httpOnly cookie named `access_token`
-- HS256, signed with `SECRET_KEY`
-- Expiry configured via `JWT_EXPIRE_DAYS` (default: 30 days)
-- No refresh token — on expiry the user re-authenticates
+- `HttpOnly` cookie named `access_token`
+- HS256 signature created with `SECRET_KEY`
+- Expiry set by `JWT_EXPIRE_DAYS` (default: 30 days)
+- No refresh token. The user signs in again after expiry.
 - All authenticated endpoints read the cookie automatically; the frontend never handles the token directly
 
 ---
@@ -147,34 +146,34 @@ If the OIDC provider returns a verified email and that email is not already used
 
 | Field | Type | Description |
 |---|---|---|
-| `has_password` | `bool` | Whether the user has a password set (i.e., registered via basic auth). |
+| `has_password` | `bool` | Whether the user has a password. |
 | `has_oidc` | `bool` | Whether the user has an OIDC link (`oidc_sub` is set). |
 
-These fields drive frontend behavior — for example, whether to show a password prompt before account deletion.
+These fields control frontend behavior, including whether account deletion requires a password prompt.
 
 ---
 
-## Account Deletion
+## Account deletion
 
 `DELETE /api/v1/users/me`
 
 Permanently deletes the authenticated user's account and all associated data.
 
-- **Request body (JSON):** `{"password": "<current_password>"}` for password-auth accounts, or `{}` for OIDC-only accounts
-- Returns `401` if the password is wrong or absent for a password-auth account
+- **Request body (JSON):** `{"password": "<current_password>"}` for password accounts, or `{}` for OIDC-only accounts
+- Returns `401` if a password account supplies an incorrect or missing password
 - On success: clears the `access_token` and `oidc_id_token` cookies and returns `{"ok": true}`
 
 **OIDC-only users** (no password set) must supply an empty `{}` body (the field is optional). They are exempt from the password check.
 
 ---
 
-## No Admin Role
+## No administrator role
 
 All authenticated users have equal access to their own data. Access control is purely by ownership (`user_id`). There is no separate administrator concept.
 
 ---
 
-## Common Provider Examples
+## Common provider examples
 
 ### Authentik
 
