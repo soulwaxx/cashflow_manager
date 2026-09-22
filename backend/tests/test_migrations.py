@@ -62,9 +62,9 @@ def test_direct_alembic_cli_uses_configured_db_path(tmp_path):
 def test_migration_head_creates_expected_schema():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
+    engine = create_engine(f"sqlite:///{db_path}")
     try:
         command.upgrade(_cfg(db_path), "head")
-        engine = create_engine(f"sqlite:///{db_path}")
         inspector = inspect(engine)
 
         # transfers table
@@ -160,16 +160,17 @@ def test_migration_head_creates_expected_schema():
         # A fresh migrated database must exactly match the registered ORM metadata.
         command.check(_cfg(db_path))
     finally:
+        engine.dispose()
         os.unlink(db_path)
 
 
 def test_migration_013_backfills_current_card_links_from_previous_head():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
+    engine = create_engine(f"sqlite:///{db_path}")
     try:
         cfg = _cfg(db_path)
         command.upgrade(cfg, "012pm_link_set_null")
-        engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as connection:
             connection.exec_driver_sql(
                 "INSERT INTO users (id, email, name) VALUES ('user-1', 'migration@example.com', 'Migration')"
@@ -195,6 +196,7 @@ def test_migration_013_backfills_current_card_links_from_previous_head():
             "linked_bank_id": "bank-1", "valid_from": "0001-01-01",
         }]
     finally:
+        engine.dispose()
         os.unlink(db_path)
 
 
@@ -363,10 +365,10 @@ def test_migration_removes_orphaned_financial_rows_without_touching_owned_data()
 def test_migration_014_reconciles_legacy_rows_without_losing_constraints_or_indexes():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
+    engine = create_engine(f"sqlite:///{db_path}")
     try:
         cfg = _cfg(db_path)
         command.upgrade(cfg, "013card_link_history")
-        engine = create_engine(f"sqlite:///{db_path}")
         with engine.begin() as connection:
             connection.exec_driver_sql("""
                 INSERT INTO users (id, email, name, created_at)
@@ -453,6 +455,7 @@ def test_migration_014_reconciles_legacy_rows_without_losing_constraints_or_inde
         assert len(payment_method_fks) == 1
         assert payment_method_fks[0]["options"].get("ondelete", "").upper() == "SET NULL"
     finally:
+        engine.dispose()
         os.unlink(db_path)
 
 
@@ -886,17 +889,18 @@ def test_migration_003_roundtrip_preserves_user_id_index():
     """Downgrade to 002 then re-upgrade to head must preserve ix_main_bank_history_user_id."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
+    engine = create_engine(f"sqlite:///{db_path}")
     try:
         command.upgrade(_cfg(db_path), "head")
         command.downgrade(_cfg(db_path), "002")
         command.upgrade(_cfg(db_path), "head")
 
-        engine = create_engine(f"sqlite:///{db_path}")
         inspector = inspect(engine)
         index_names = {idx["name"] for idx in inspector.get_indexes("main_bank_history")}
         assert "ix_main_bank_history_user_id" in index_names, (
             f"ix_main_bank_history_user_id missing after downgrade+upgrade. Found: {index_names}"
         )
     finally:
+        engine.dispose()
         command.downgrade(_cfg(db_path), "base")
         os.unlink(db_path)

@@ -94,6 +94,27 @@ Register a confidential client in your OIDC provider with:
 
 The application discovers provider endpoints automatically from `{OIDC_ISSUER_URL}/.well-known/openid-configuration`.
 
+### Real-provider TLS smoke test
+
+**Status:** Pending. No real OIDC provider credentials were available during the HTTPX2 migration. Keep credentials outside the repository and complete this check before relying on a new provider configuration in production.
+
+Prerequisites:
+
+- A configured HTTPS OIDC provider and confidential client.
+- The required OIDC environment variables listed above, supplied outside version control.
+- The provider certificate chain trusted by the operating system running CashFlow Manager. HTTPX2 uses the operating-system trust store by default; install any private or corporate CA there, or configure `SSL_CERT_FILE`/`SSL_CERT_DIR`.
+- A registered callback URI matching `OIDC_REDIRECT_URI` exactly.
+
+Procedure:
+
+1. Start the backend with the real provider configuration and open `/api/v1/auth/oidc/login` in a browser.
+2. Confirm discovery succeeds and the browser redirects to the provider authorization endpoint without a TLS or certificate error.
+3. Complete provider authentication and confirm the callback exchanges the authorization code, retrieves UserInfo, and redirects to the application.
+4. Request `/api/v1/auth/me` and confirm the authenticated user has the expected OIDC identity.
+5. Sign out and confirm both the local session and provider logout flow complete as configured.
+
+Expected result: discovery, token exchange, UserInfo, and logout requests complete over trusted TLS; the user can sign in and sign out without certificate, issuer, audience, nonce, or redirect-URI errors.
+
 ### Sign-in flow
 
 The sign-in page reads `GET /api/v1/auth/config` and shows the single sign-on (SSO) entry point when `oidc_enabled=true`. When `basic_auth_enabled=false`, it hides the password form and states that password sign-in is disabled.

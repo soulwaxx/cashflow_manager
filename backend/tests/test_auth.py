@@ -283,6 +283,8 @@ def test_unauthenticated_transactions_returns_401():
             assert r.status_code == 401
     finally:
         app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         os.environ.pop("DEVELOPMENT_MODE", None)
         get_settings.cache_clear()
 
@@ -324,6 +326,8 @@ def test_unauthenticated_forecasts_returns_401():
             assert r.status_code == 401
     finally:
         app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         os.environ.pop("DEVELOPMENT_MODE", None)
         get_settings.cache_clear()
 
@@ -365,6 +369,8 @@ def test_unauthenticated_payment_methods_returns_401():
             assert r.status_code == 401
     finally:
         app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         os.environ.pop("DEVELOPMENT_MODE", None)
         get_settings.cache_clear()
 

@@ -15,11 +15,14 @@ def test_get_engine_creates_sqlite_engine(tmp_path):
     os.environ["DEVELOPMENT_MODE"] = "true"
     get_settings.cache_clear()
     get_engine.cache_clear()
+    engine = None
     try:
         engine = get_engine()
         assert engine is not None
         assert "sqlite" in str(engine.url)
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         os.environ.pop("DB_PATH", None)
         os.environ.pop("DEVELOPMENT_MODE", None)
@@ -37,6 +40,7 @@ def test_get_session_factory_returns_callable(tmp_path):
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
+    engine = None
     try:
         engine = get_engine()
         Base.metadata.create_all(bind=engine)
@@ -45,6 +49,8 @@ def test_get_session_factory_returns_callable(tmp_path):
         session.close()
         Base.metadata.drop_all(bind=engine)
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)
@@ -64,6 +70,7 @@ def test_get_db_yields_and_closes(tmp_path):
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
+    engine = None
     try:
         engine = get_engine()
         Base.metadata.create_all(bind=engine)
@@ -76,6 +83,8 @@ def test_get_db_yields_and_closes(tmp_path):
             pass
         Base.metadata.drop_all(bind=engine)
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)
@@ -97,6 +106,7 @@ def test_sqlite_foreign_key_pragma_enforced(tmp_path):
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
+    engine = None
     try:
         engine = get_engine()
         Base.metadata.create_all(bind=engine)
@@ -108,6 +118,8 @@ def test_sqlite_foreign_key_pragma_enforced(tmp_path):
         session.close()
         Base.metadata.drop_all(bind=engine)
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)
@@ -128,6 +140,7 @@ def test_user_settings_cascade_on_user_delete(tmp_path):
     get_settings.cache_clear()
     get_engine.cache_clear()
     get_session_factory.cache_clear()
+    engine = None
     try:
         engine = get_engine()
         Base.metadata.create_all(bind=engine)
@@ -151,6 +164,8 @@ def test_user_settings_cascade_on_user_delete(tmp_path):
         session.close()
         Base.metadata.drop_all(bind=engine)
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)
@@ -178,11 +193,13 @@ def test_main_lifespan_runs_alembic_migration(tmp_path):
     fresh_app = create_app()
     assert not fresh_app.dependency_overrides
 
+    engine = None
     try:
         with TestClient(fresh_app, raise_server_exceptions=True) as c:
             resp = c.get("/docs")
             assert resp.status_code == 200
-        with get_engine().connect() as connection:
+        engine = get_engine()
+        with engine.connect() as connection:
             revision = connection.exec_driver_sql(
                 "SELECT version_num FROM alembic_version"
             ).scalar_one()
@@ -192,6 +209,8 @@ def test_main_lifespan_runs_alembic_migration(tmp_path):
         )
         assert revision == ScriptDirectory.from_config(alembic_cfg).get_current_head()
     finally:
+        if engine is not None:
+            engine.dispose()
         get_engine.cache_clear()
         get_session_factory.cache_clear()
         os.environ.pop("DB_PATH", None)

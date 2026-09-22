@@ -6,7 +6,7 @@
 |---|---|
 | Python | 3.14+ |
 | Node.js | 24+ |
-| npm | 10+ |
+| npm | 11.19+ |
 | Docker Engine and Compose | Optional. Use them to run the full stack in containers. |
 
 ---
@@ -25,7 +25,7 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 
 # Install dependencies
-python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 
 # The backend reads .env from the process working directory
 cp ../.env.example .env
@@ -171,7 +171,8 @@ cashflow-manager/
 │   ├── alembic/             ← Migration scripts
 │   ├── tests/               ← pytest test suite
 │   ├── alembic.ini
-│   └── requirements.txt
+│   ├── requirements.txt     ← Production dependencies
+│   └── requirements-dev.txt ← Production plus test dependencies
 ├── frontend/                ← React + TypeScript application
 │   ├── src/
 │   │   ├── api/             ← Typed API functions (one per domain)

@@ -74,6 +74,8 @@ def test_change_password_unauthenticated_returns_401():
             assert resp.status_code == 401
     finally:
         app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
         os.environ.pop("DEVELOPMENT_MODE", None)
         get_settings.cache_clear()
 

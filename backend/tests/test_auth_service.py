@@ -1,5 +1,18 @@
+import secrets
 import time
+
+import pytest
+
+from app.config import get_settings
 from app.services.auth import hash_password, verify_password, create_access_token, decode_access_token
+
+
+@pytest.fixture(autouse=True)
+def secure_test_secret(monkeypatch):
+    monkeypatch.setenv("SECRET_KEY", secrets.token_hex(32))
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def test_hash_and_verify():

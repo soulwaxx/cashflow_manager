@@ -20,6 +20,7 @@ def oidc_client(monkeypatch):
     monkeypatch.setenv("OIDC_CLIENT_SECRET", "client-secret")
     monkeypatch.setenv("OIDC_REDIRECT_URI", "http://localhost:8000/api/v1/auth/oidc/callback")
     monkeypatch.setenv("SESSION_ENCRYPTION_KEY", "a" * 64)
+    monkeypatch.setenv("SECRET_KEY", "oidc-test-secret-key-with-at-least-32-bytes")
     get_settings.cache_clear()
 
     engine = create_engine(
