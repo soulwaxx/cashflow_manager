@@ -1,6 +1,6 @@
 import os
 import base64
-import httpx
+import httpx2 as httpx
 from typing import Optional
 import jwt as pyjwt
 from jwt import PyJWKClient

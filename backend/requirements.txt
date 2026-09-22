@@ -1,16 +1,12 @@
 fastapi==0.141.1
-uvicorn[standard]==0.52.4
+uvicorn[standard]==0.53.0
 sqlalchemy>=2.0.37
-alembic==1.19.2
+alembic==1.20.0
 PyJWT>=2.9.0
 bcrypt>=4.0.0
-httpx==0.28.1
+httpx2==2.13.0
 python-multipart==0.0.32
 pydantic-settings==2.15.0
-cryptography==49.0.0
+cryptography==50.0.1
 python-dateutil==2.9.0.post0
 pytz==2026.3.post1
-
-# dev / test
-pytest==9.1.1
-pytest-cov==7.1.0

@@ -3,6 +3,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 **/*.pyc
 backend/.pytest_cache/
+backend/.venv/
 backend/htmlcov/
 backend/coverage.xml
 backend/data

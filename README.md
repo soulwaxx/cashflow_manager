@@ -106,6 +106,8 @@ You can turn on either method or both methods. CashFlow Manager matches OIDC use
 
 ## Development
 
+Local development requires Python 3.14+, Node.js 24+, and npm 11.19+.
+
 Create the backend environment and start Uvicorn:
 
 ```bash
@@ -113,7 +115,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install --requirement requirements.txt
+python -m pip install --requirement requirements-dev.txt
 cp ../.env.example .env
 mkdir -p data
 # Set DB_PATH=./data/cashflow.db in backend/.env

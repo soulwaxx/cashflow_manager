@@ -34,11 +34,12 @@ FastAPI lifespan is the sole automatic migration owner. `start.sh` only launches
 
 ## Toolchain and setup
 
-Canonical versions come from CI and Dockerfiles: Python 3.14, Node 24, and npm 10+.
+Canonical versions come from CI and Dockerfiles: Python 3.14, Node 24, and npm 11.19+.
 
 Dependency sources:
 
-- Backend: `backend/requirements.txt` (runtime and test dependencies; no Python lockfile).
+- Backend runtime: `backend/requirements.txt` (no Python lockfile).
+- Backend development/test: `backend/requirements-dev.txt` (includes runtime dependencies).
 - Frontend: `frontend/package.json` + `frontend/package-lock.json` (npm lockfile v3).
 - E2E: `e2e/package.json` + `e2e/package-lock.json`.
 
@@ -49,7 +50,7 @@ cd backend
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install --requirement requirements.txt
+python -m pip install --requirement requirements-dev.txt
 mkdir -p data
 uvicorn app.main:app --reload --port 8000
 ```

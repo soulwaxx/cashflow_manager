@@ -1,4 +1,6 @@
 import os
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -10,7 +12,8 @@ from app.config import get_settings
 from app.models.tax import TaxConfig
 
 
-def _make_client():
+@pytest.fixture
+def bootstrap_client():
     # StaticPool ensures all connections share the same in-memory DB
     engine = create_engine(
         "sqlite:///:memory:",
@@ -33,31 +36,30 @@ def _make_client():
     get_settings.cache_clear()
 
     app.dependency_overrides[get_db] = override
-    return TestClient(app, raise_server_exceptions=True), Session
+    try:
+        with TestClient(app, raise_server_exceptions=True) as client:
+            yield client, Session
+    finally:
+        app.dependency_overrides.clear()
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+        os.environ.pop("DEVELOPMENT_MODE", None)
+        get_settings.cache_clear()
 
 
-def test_docs_endpoint():
-    client, _ = _make_client()
-    with client:
-        resp = client.get("/docs")
-        assert resp.status_code == 200
-    app.dependency_overrides.clear()
-    os.environ.pop("DEVELOPMENT_MODE", None)
-    get_settings.cache_clear()
+def test_docs_endpoint(bootstrap_client):
+    client, _ = bootstrap_client
+    resp = client.get("/docs")
+    assert resp.status_code == 200
 
 
-def test_tax_config_seeded():
-    client, Session = _make_client()
-    with client:
-        client.get("/docs")
-        db = Session()
+def test_tax_config_seeded(bootstrap_client):
+    client, Session = bootstrap_client
+    client.get("/docs")
+    with Session() as db:
         tc = db.query(TaxConfig).first()
         assert tc is not None
         assert abs(float(tc.inps_rate) - 0.0919) < 1e-4
-        db.close()
-    app.dependency_overrides.clear()
-    os.environ.pop("DEVELOPMENT_MODE", None)
-    get_settings.cache_clear()
 
 
 def test_get_default_categories_returns_all_entries():

@@ -2,7 +2,8 @@
 FROM node:24-alpine AS frontend-build
 WORKDIR /app
 COPY frontend/package*.json ./
-RUN npm ci
+RUN npm install --global npm@11.19.0 \
+    && npm ci
 COPY frontend/ .
 RUN npm run build
 
