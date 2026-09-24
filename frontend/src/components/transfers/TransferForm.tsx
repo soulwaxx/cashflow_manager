@@ -4,6 +4,7 @@ import { useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { transfersApi } from '../../api/transfers';
 import { paymentMethodsApi } from '../../api/paymentMethods';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { accountsApi } from '../../api/accounts';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
@@ -46,11 +47,11 @@ export default function TransferForm({ onSuccess, initial }: Props) {
   });
 
   const { data: paymentMethods = [] } = useQuery({
-    queryKey: ['payment-methods', 'active'],
+    queryKey: queryKeys.paymentMethods.list('active'),
     queryFn: () => paymentMethodsApi.list(),
   });
   const { data: accounts = [] } = useQuery({
-    queryKey: ['accounts'],
+    queryKey: queryKeys.accounts.all,
     queryFn: () => accountsApi.list(),
   });
 
@@ -102,10 +103,7 @@ export default function TransferForm({ onSuccess, initial }: Props) {
     },
     onSuccess: () => {
       setSubmitError(null);
-      qc.invalidateQueries({ queryKey: ['transfers'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['assets'] });
-      qc.invalidateQueries({ queryKey: ['analytics'] });
+      invalidateFor(qc, 'transfer');
       onSuccess();
     },
     onError: (err: unknown) => {

@@ -3,6 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import ForecastGrid from '../../src/components/forecasting/ForecastGrid';
 import type { ForecastProjection } from '../../src/types/api';
 
+const months = Array.from({ length: 12 }, (_, index) => `2026-${String(index + 1).padStart(2, '0')}`);
+
 const projection: ForecastProjection = {
   forecast_id: 'f1',
   base_year: 2025,
@@ -16,16 +18,10 @@ const projection: ForecastProjection = {
       base_amount: 900,
       billing_day: 1,
       adjustments: [],
-      months: [
-        { month: '2026-01', effective_amount: 900 },
-        { month: '2026-02', effective_amount: 900 },
-      ],
+      months: months.map((month) => ({ month, effective_amount: 900 })),
     },
   ],
-  monthly_totals: [
-    { month: '2026-01', total: 900 },
-    { month: '2026-02', total: 900 },
-  ],
+  monthly_totals: months.map((month) => ({ month, total: 900 })),
   yearly_totals: [{ year: 2026, total: 10800 }],
 };
 
@@ -61,17 +57,11 @@ test('ForecastGrid highlights months after the first adjustment threshold', () =
           { id: 'adj-2', valid_from: '2026-02-01', new_amount: 950, adjustment_type: 'fixed' },
           { id: 'adj-1', valid_from: '2026-01-01', new_amount: 925, adjustment_type: 'fixed' },
         ],
-        months: [
-          { month: '2026-01', effective_amount: 900 },
-          { month: '2026-02', effective_amount: 925 },
-        ],
+        months: months.map((month, index) => ({ month, effective_amount: index === 0 ? 925 : 950 })),
       },
     ],
-    monthly_totals: [
-      { month: '2026-01', total: 900 },
-      { month: '2026-02', total: 925 },
-    ],
-    yearly_totals: [{ year: 2026, total: 1825 }],
+    monthly_totals: months.map((month, index) => ({ month, total: index === 0 ? 925 : 950 })),
+    yearly_totals: [{ year: 2026, total: 11375 }],
   };
 
   const { container } = render(
@@ -81,6 +71,7 @@ test('ForecastGrid highlights months after the first adjustment threshold', () =
   );
 
   const highlightedCells = container.querySelectorAll('tbody td.text-yellow-700.font-medium');
-  expect(highlightedCells).toHaveLength(1);
+  expect(highlightedCells).toHaveLength(12);
   expect(highlightedCells[0]).toHaveTextContent('925,00');
+  expect(highlightedCells[1]).toHaveTextContent('950,00');
 });

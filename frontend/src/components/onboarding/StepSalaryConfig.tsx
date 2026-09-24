@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { useQuery } from '@tanstack/react-query';
 import { useOnboarding } from '../../contexts/OnboardingContext';
 import { salaryApi } from '../../api/salary';
+import { queryKeys } from '../../api/queryKeys';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 import { fmt } from '../../utils/format';
@@ -39,7 +40,7 @@ export default function StepSalaryConfig() {
 
   const today = new Date().toISOString().slice(0, 7);
   const { data: preview } = useQuery({
-    queryKey: ['salary', 'calculate', ral, employer, voluntary, regional, municipal, salaryMonths],
+    queryKey: queryKeys.salary.calculate({ as_of: today, ral, employer, voluntary, regional, municipal, salaryMonths }),
     queryFn: () =>
       salaryApi.calculate({
         as_of: today,

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transfersApi } from '../../api/transfers';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { fmt } from '../../utils/format';
 import TransferForm from './TransferForm';
 import CascadeDeleteModal from './CascadeDeleteModal';
@@ -25,7 +26,7 @@ export default function TransferList() {
     hasNextPage,
     fetchNextPage,
   } = useInfiniteQuery({
-    queryKey: ['transfers', 'paged'],
+    queryKey: queryKeys.transfers.paged,
     initialPageParam: 0,
     queryFn: ({ pageParam }) => transfersApi.list({ limit: PAGE_SIZE, offset: pageParam }),
     getNextPageParam: (lastPage, _pages, lastPageParam) =>
@@ -38,10 +39,7 @@ export default function TransferList() {
       transfersApi.delete(id, cascade),
     onSuccess: () => {
       setDeleteError(null);
-      qc.invalidateQueries({ queryKey: ['transfers'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['assets'] });
-      qc.invalidateQueries({ queryKey: ['analytics'] });
+      invalidateFor(qc, 'transfer');
       setDeleteTr(null);
     },
     onError: (err: unknown) => {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { summaryApi } from '../api/summary';
+import { queryKeys } from '../api/queryKeys';
 import { fmt } from '../utils/format';
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -12,7 +13,7 @@ export default function SummaryPage() {
   const navigate = useNavigate();
 
   const { data: months = [], isLoading } = useQuery({
-    queryKey: ['summary', year],
+    queryKey: queryKeys.summary.year(year),
     queryFn: () => summaryApi.year(year),
   });
 

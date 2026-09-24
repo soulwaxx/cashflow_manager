@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { categoriesApi } from '../../api/categories';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
@@ -17,7 +18,7 @@ export default function CategoriesSettings() {
   const [editCat, setEditCat] = useState<Category | null>(null);
 
   const { data: categories = [], isLoading } = useQuery({
-    queryKey: ['categories', 'all'],
+    queryKey: queryKeys.categories.list('all'),
     queryFn: () => categoriesApi.list(false),
   });
 
@@ -27,7 +28,7 @@ export default function CategoriesSettings() {
   const { mutate: create, isPending: creating } = useMutation({
     mutationFn: (d: AddFields) => categoriesApi.create(d),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['categories'] });
+      invalidateFor(qc, 'category');
       setAddOpen(false);
       resetAdd();
     },
@@ -36,23 +37,19 @@ export default function CategoriesSettings() {
   const { mutate: update, isPending: updating } = useMutation({
     mutationFn: (d: EditFields) => categoriesApi.update(editCat!.id, d),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['categories'] });
+      invalidateFor(qc, 'category');
       setEditCat(null);
     },
   });
 
   const { mutate: deactivate } = useMutation({
     mutationFn: (id: string) => categoriesApi.update(id, { is_active: false }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['categories'] });
-    },
+    onSuccess: () => invalidateFor(qc, 'category'),
   });
 
   const { mutate: reactivate } = useMutation({
     mutationFn: (id: string) => categoriesApi.update(id, { is_active: true }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['categories'] });
-    },
+    onSuccess: () => invalidateFor(qc, 'category'),
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-muted-bg rounded" />;

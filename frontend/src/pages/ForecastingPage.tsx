@@ -10,7 +10,7 @@ export default function ForecastingPage() {
   return (
     <div className="max-w-3xl space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-primary">Forecasting</h1>
+        <h1 className="text-xl font-bold text-primary">Spending commitment forecasts</h1>
         <Button onClick={() => setCreateOpen(true)}>+ New forecast</Button>
       </div>
       <ForecastList />

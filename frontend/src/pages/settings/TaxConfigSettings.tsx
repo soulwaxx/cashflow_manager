@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { taxConfigApi } from '../../api/taxConfig';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { Button } from '../../components/ui/Button';
 import { Input } from '../../components/ui/Input';
 import Modal from '../../components/ui/Modal';
@@ -16,7 +17,7 @@ export default function TaxConfigSettings() {
   const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const { data: configs = [], isLoading } = useQuery({
-    queryKey: ['tax-config'],
+    queryKey: queryKeys.taxConfig.all,
     queryFn: taxConfigApi.list,
   });
 
@@ -26,7 +27,7 @@ export default function TaxConfigSettings() {
     mutationFn: (d: Fields & { valid_from_input: string }) =>
       taxConfigApi.create({ ...d, valid_from: `${d.valid_from_input}-01` }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['tax-config'] });
+      invalidateFor(qc, 'tax');
       setAddOpen(false);
       reset();
     },
@@ -34,7 +35,7 @@ export default function TaxConfigSettings() {
 
   const { mutate: del } = useMutation({
     mutationFn: (id: string) => taxConfigApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tax-config'] }),
+    onSuccess: () => invalidateFor(qc, 'tax'),
   });
 
   const earliest = configs[0]?.id;

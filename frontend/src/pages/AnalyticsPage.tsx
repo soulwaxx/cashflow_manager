@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { analyticsApi } from '../api/analytics';
 import { categoriesApi } from '../api/categories';
 import { paymentMethodsApi } from '../api/paymentMethods';
+import { queryKeys } from '../api/queryKeys';
 import AnalyticsFilters from '../components/analytics/AnalyticsFilters';
 import CategoryBarChart from '../components/analytics/CategoryBarChart';
 import CumulativeLineChart from '../components/analytics/CumulativeLineChart';
@@ -33,7 +34,7 @@ export default function AnalyticsPage() {
   });
 
   const { data: categoryRows = [] } = useQuery({
-    queryKey: ['analytics', filters],
+    queryKey: queryKeys.analytics.categoryRows(filters),
     queryFn: () =>
       analyticsApi.categories({
         from: filters.from,
@@ -45,16 +46,16 @@ export default function AnalyticsPage() {
   });
 
   const { data: transferRows = [] } = useQuery({
-    queryKey: ['analytics', 'transfers', filters.from, filters.to],
+    queryKey: queryKeys.analytics.transferRows(filters.from, filters.to),
     queryFn: () => analyticsApi.transfers({ from: filters.from, to: filters.to }),
   });
 
   const { data: categories = [] } = useQuery({
-    queryKey: ['categories', 'all'],
+    queryKey: queryKeys.categories.list('all'),
     queryFn: () => categoriesApi.list(false),
   });
   const { data: paymentMethods = [] } = useQuery({
-    queryKey: ['payment-methods'],
+    queryKey: queryKeys.paymentMethods.list('all'),
     queryFn: () => paymentMethodsApi.list(false),
   });
 

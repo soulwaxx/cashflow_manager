@@ -6,7 +6,11 @@ from app.models.category import Category
 from app.models.payment_method import PaymentMethod
 from app.models.forecast import Forecast, ForecastLine, ForecastAdjustment
 from app.services.forecasting import auto_generate_lines, project_forecast
-from app.schemas.forecast import ForecastCreate, ForecastUpdate, ForecastLineCreate, AdjustmentCreate, AdjustmentUpdate
+from app.schemas.forecast import (
+    ForecastCreate, ForecastUpdate, ForecastLineCreate, AdjustmentCreate, AdjustmentUpdate,
+    ForecastRead, ForecastDetail, ForecastLineRead, ForecastAdjustmentCreated,
+    ForecastProjectionRead,
+)
 
 router = APIRouter(prefix="/forecasts", tags=["forecasts"])
 
@@ -27,13 +31,27 @@ def _ensure_payment_method_owned_by_user(db: Session, payment_method_id: str | N
         raise HTTPException(422, "payment_method_id not found")
 
 
+def _line_detail(line: ForecastLine, adjustments: list[ForecastAdjustment]) -> dict:
+    return {
+        "id": line.id, "source_transaction_id": line.source_transaction_id,
+        "detail": line.detail, "category_id": line.category_id,
+        "base_amount": float(line.base_amount), "billing_day": line.billing_day,
+        "payment_method_id": line.payment_method_id, "notes": line.notes,
+        "adjustments": [
+            {"id": adj.id, "valid_from": adj.valid_from, "new_amount": float(adj.new_amount),
+             "adjustment_type": adj.adjustment_type}
+            for adj in adjustments
+        ],
+    }
+
+
 def _forecast_detail(forecast: Forecast, db: Session) -> dict:
-    lines = db.query(ForecastLine).filter_by(forecast_id=forecast.id).all()
+    lines = db.query(ForecastLine).filter_by(forecast_id=forecast.id, user_id=forecast.user_id).all()
     # Bulk-load all adjustments in one query
     line_ids = [line.id for line in lines]
     all_adjs = (
         db.query(ForecastAdjustment)
-        .filter(ForecastAdjustment.forecast_line_id.in_(line_ids))
+        .filter(ForecastAdjustment.forecast_line_id.in_(line_ids), ForecastAdjustment.user_id == forecast.user_id)
         .all()
         if line_ids else []
     )
@@ -41,35 +59,20 @@ def _forecast_detail(forecast: Forecast, db: Session) -> dict:
     for a in all_adjs:
         adjs_by_line[a.forecast_line_id].append(a)
 
-    lines_out = []
-    for line in lines:
-        adjs = adjs_by_line.get(line.id, [])
-        lines_out.append({
-            "id": line.id, "detail": line.detail, "category_id": line.category_id,
-            "base_amount": float(line.base_amount), "billing_day": line.billing_day,
-            "payment_method_id": line.payment_method_id, "notes": line.notes,
-            "adjustments": [
-                {
-                    "id": a.id, "valid_from": a.valid_from, "new_amount": float(a.new_amount),
-                    "adjustment_type": getattr(a, "adjustment_type", "fixed") or "fixed",
-                }
-                for a in adjs
-            ],
-        })
     return {
-        "id": forecast.id, "name": forecast.name,
+        "id": forecast.id, "user_id": forecast.user_id, "name": forecast.name,
         "base_year": forecast.base_year, "projection_years": forecast.projection_years,
-        "created_at": str(forecast.created_at), "updated_at": str(forecast.updated_at),
-        "lines": lines_out,
+        "created_at": forecast.created_at, "updated_at": forecast.updated_at,
+        "lines": [_line_detail(line, adjs_by_line.get(line.id, [])) for line in lines],
     }
 
 
-@router.get("")
+@router.get("", response_model=list[ForecastRead])
 def list_forecasts(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Forecast).filter_by(user_id=current_user.id).all()
 
 
-@router.post("")
+@router.post("", response_model=ForecastDetail)
 def create_forecast(req: ForecastCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = Forecast(
         user_id=current_user.id, name=req.name, base_year=req.base_year,
@@ -83,7 +86,7 @@ def create_forecast(req: ForecastCreate, current_user: User = Depends(get_curren
     return _forecast_detail(fc, db)
 
 
-@router.get("/{fc_id}")
+@router.get("/{fc_id}", response_model=ForecastDetail)
 def get_forecast(fc_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = db.query(Forecast).filter_by(id=fc_id, user_id=current_user.id).first()
     if not fc:
@@ -91,7 +94,7 @@ def get_forecast(fc_id: str, current_user: User = Depends(get_current_user), db:
     return _forecast_detail(fc, db)
 
 
-@router.put("/{fc_id}")
+@router.put("/{fc_id}", response_model=ForecastDetail)
 def update_forecast(fc_id: str, req: ForecastUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = db.query(Forecast).filter_by(id=fc_id, user_id=current_user.id).first()
     if not fc:
@@ -115,7 +118,7 @@ def update_forecast(fc_id: str, req: ForecastUpdate, current_user: User = Depend
     return _forecast_detail(fc, db)
 
 
-@router.delete("/{fc_id}")
+@router.delete("/{fc_id}", response_model=dict[str, bool])
 def delete_forecast(fc_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = db.query(Forecast).filter_by(id=fc_id, user_id=current_user.id).first()
     if not fc:
@@ -125,7 +128,7 @@ def delete_forecast(fc_id: str, current_user: User = Depends(get_current_user), 
     return {"ok": True}
 
 
-@router.get("/{fc_id}/projection")
+@router.get("/{fc_id}/projection", response_model=ForecastProjectionRead)
 def get_projection(fc_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = db.query(Forecast).filter_by(id=fc_id, user_id=current_user.id).first()
     if not fc:
@@ -133,7 +136,7 @@ def get_projection(fc_id: str, current_user: User = Depends(get_current_user), d
     return project_forecast(fc_id, current_user.id, db)
 
 
-@router.post("/{fc_id}/lines")
+@router.post("/{fc_id}/lines", response_model=ForecastLineRead)
 def add_line(fc_id: str, req: ForecastLineCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     fc = db.query(Forecast).filter_by(id=fc_id, user_id=current_user.id).first()
     if not fc:
@@ -144,20 +147,15 @@ def add_line(fc_id: str, req: ForecastLineCreate, current_user: User = Depends(g
     db.add(line)
     db.commit()
     db.refresh(line)
-    return {
-        "id": line.id, "detail": line.detail, "category_id": line.category_id,
-        "base_amount": float(line.base_amount), "billing_day": line.billing_day,
-        "payment_method_id": line.payment_method_id, "notes": line.notes,
-        "adjustments": [],
-    }
+    return _line_detail(line, [])
 
 
-@router.put("/{fc_id}/lines/{line_id}")
+@router.put("/{fc_id}/lines/{line_id}", response_model=ForecastLineRead)
 def update_line(fc_id: str, line_id: str, req: ForecastLineCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     line = db.query(ForecastLine).filter_by(id=line_id, forecast_id=fc_id, user_id=current_user.id).first()
     if not line:
         raise HTTPException(404, "Not found")
-    payload = req.model_dump(exclude_none=True)
+    payload = req.model_dump(exclude_unset=True)
     if "category_id" in payload:
         _ensure_category_owned_by_user(db, req.category_id, current_user.id)
     if "payment_method_id" in payload:
@@ -167,19 +165,10 @@ def update_line(fc_id: str, line_id: str, req: ForecastLineCreate, current_user:
     db.commit()
     db.refresh(line)
     adjustments = db.query(ForecastAdjustment).filter_by(forecast_line_id=line.id).all()
-    return {
-        "id": line.id, "detail": line.detail, "category_id": line.category_id,
-        "base_amount": float(line.base_amount), "billing_day": line.billing_day,
-        "payment_method_id": line.payment_method_id, "notes": line.notes,
-        "adjustments": [
-            {"id": a.id, "valid_from": a.valid_from, "new_amount": float(a.new_amount),
-             "adjustment_type": a.adjustment_type}
-            for a in adjustments
-        ],
-    }
+    return _line_detail(line, adjustments)
 
 
-@router.delete("/{fc_id}/lines/{line_id}")
+@router.delete("/{fc_id}/lines/{line_id}", response_model=dict[str, bool])
 def delete_line(fc_id: str, line_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     line = db.query(ForecastLine).filter_by(id=line_id, forecast_id=fc_id, user_id=current_user.id).first()
     if not line:
@@ -189,7 +178,7 @@ def delete_line(fc_id: str, line_id: str, current_user: User = Depends(get_curre
     return {"ok": True}
 
 
-@router.post("/{fc_id}/lines/{line_id}/adjustments")
+@router.post("/{fc_id}/lines/{line_id}/adjustments", response_model=ForecastAdjustmentCreated)
 def add_adjustment(
     fc_id: str, line_id: str, req: AdjustmentCreate,
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
@@ -205,6 +194,10 @@ def add_adjustment(
     start_date = f"{fc.base_year + 1:04d}-01-01"
     if not (start_date <= req.valid_from <= end_date):
         raise HTTPException(422, f"valid_from must be between {start_date} and {end_date}")
+    if db.query(ForecastAdjustment).filter_by(
+        forecast_line_id=line_id, user_id=current_user.id, valid_from=req.valid_from
+    ).first():
+        raise HTTPException(422, "An adjustment already exists for this month")
     adj = ForecastAdjustment(
         forecast_line_id=line_id, user_id=current_user.id,
         valid_from=req.valid_from, new_amount=req.new_amount,
@@ -216,7 +209,7 @@ def add_adjustment(
     return adj
 
 
-@router.put("/{fc_id}/lines/{line_id}/adjustments/{adj_id}")
+@router.put("/{fc_id}/lines/{line_id}/adjustments/{adj_id}", response_model=ForecastAdjustmentCreated)
 def update_adjustment(
     fc_id: str, line_id: str, adj_id: str, req: AdjustmentUpdate,
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
@@ -243,12 +236,22 @@ def update_adjustment(
     if null_fields:
         raise HTTPException(422, f"Fields cannot be null: {', '.join(sorted(null_fields))}")
 
-    if "valid_from" in payload:
-        # Validate valid_from is within projection period (same check as add_adjustment)
-        end_date = f"{fc.base_year + fc.projection_years:04d}-12-01"
-        start_date = f"{fc.base_year + 1:04d}-01-01"
-        if not (start_date <= payload["valid_from"] <= end_date):
-            raise HTTPException(422, f"valid_from must be between {start_date} and {end_date}")
+    valid_from = payload.get("valid_from", adj.valid_from)
+    end_date = f"{fc.base_year + fc.projection_years:04d}-12-01"
+    start_date = f"{fc.base_year + 1:04d}-01-01"
+    if not (start_date <= valid_from <= end_date):
+        raise HTTPException(422, f"valid_from must be between {start_date} and {end_date}")
+    if db.query(ForecastAdjustment).filter(
+        ForecastAdjustment.forecast_line_id == line_id,
+        ForecastAdjustment.user_id == current_user.id,
+        ForecastAdjustment.valid_from == valid_from,
+        ForecastAdjustment.id != adj_id,
+    ).first():
+        raise HTTPException(422, "An adjustment already exists for this month")
+    amount = payload.get("new_amount", adj.new_amount)
+    adj_type = payload.get("adjustment_type", adj.adjustment_type)
+    if adj_type == "fixed" and amount < 0:
+        raise HTTPException(422, "fixed adjustment amount must not be negative")
 
     for field, value in payload.items():
         setattr(adj, field, value)
@@ -257,7 +260,7 @@ def update_adjustment(
     return adj
 
 
-@router.delete("/{fc_id}/lines/{line_id}/adjustments/{adj_id}")
+@router.delete("/{fc_id}/lines/{line_id}/adjustments/{adj_id}", response_model=dict[str, bool])
 def delete_adjustment(
     fc_id: str, line_id: str, adj_id: str,
     current_user: User = Depends(get_current_user), db: Session = Depends(get_db),

@@ -9,13 +9,13 @@ CashFlow Manager is a self-hosted, multi-user app for personal finances. It runs
 ## Features
 
 - **Transactions:** Record income, purchases, refunds, categories, payment methods, and tags.
-- **Recurring transactions:** Create weekly, monthly, or yearly transactions with optional end dates.
+- **Recurring transactions:** Create a fixed number of monthly transaction occurrences.
 - **Transfers:** Move money between your accounts.
 - **Assets:** Track savings, investments, pensions, and property.
 - **Monthly summaries:** Review bank balances, net cash flow, and category totals.
 - **Analytics:** Compare spending trends and category totals over a selected period.
 - **Salary and tax:** Calculate net salary under Italian personal income tax (IRPEF) and social security (INPS) rules.
-- **Forecasts:** Project future bank balances from recurring commitments.
+- **Forecasts:** Project monthly spending commitments from recurring purchases; edit imported lines and future adjustments. Forecast totals are not bank balances.
 - **Onboarding:** Configure accounts, payment methods, and salary through a guided setup.
 - **Responsive interface:** Use the app on desktop and mobile devices.
 

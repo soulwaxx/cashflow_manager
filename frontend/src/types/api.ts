@@ -203,8 +203,13 @@ export interface Forecast {
   updated_at: string;
 }
 
+export interface ForecastDetail extends Forecast {
+  lines: ForecastLine[];
+}
+
 export interface ForecastLine {
   id: string;
+  source_transaction_id: string | null;
   detail: string;
   category_id: string | null;
   base_amount: number;

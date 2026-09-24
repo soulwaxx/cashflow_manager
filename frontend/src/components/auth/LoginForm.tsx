@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { authApi, fetchAuthConfigOrLegacy } from '../../api/auth';
+import { queryKeys } from '../../api/queryKeys';
 import { Input } from '../ui/Input';
 import { Button } from '../ui/Button';
 
@@ -15,7 +16,7 @@ export default function LoginForm() {
   const [error, setError] = useState<string | null>(null);
   const { register, handleSubmit, formState: { isSubmitting } } = useForm<Fields>();
   const { data: authConfig } = useQuery({
-    queryKey: ['auth', 'config'],
+    queryKey: queryKeys.auth.config,
     queryFn: fetchAuthConfigOrLegacy,
     retry: false,
     staleTime: 30_000,
@@ -29,7 +30,7 @@ export default function LoginForm() {
     setError(null);
     try {
       const user = await authApi.login(data.email, data.password);
-      queryClient.setQueryData(['auth', 'me'], user);
+      queryClient.setQueryData(queryKeys.auth.me, user);
       navigate('/');
     } catch {
       setError('Invalid email or password.');

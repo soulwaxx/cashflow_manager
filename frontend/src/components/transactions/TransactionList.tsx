@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { transactionsApi } from '../../api/transactions';
 import { paymentMethodsApi } from '../../api/paymentMethods';
 import { categoriesApi } from '../../api/categories';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import TransactionRow from './TransactionRow';
 import TransactionForm from './TransactionForm';
 import CascadeDeleteModal from './CascadeDeleteModal';
@@ -22,14 +23,14 @@ export default function TransactionList({ dateMonth, billingMonth }: Props) {
   const [deleteTx, setDeleteTx] = useState<Transaction | null>(null);
 
   const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ['transactions', billingMonth ? 'billing' : 'date', billingMonth ?? dateMonth],
+    queryKey: queryKeys.transactions.list(billingMonth ? 'billing' : 'date', (billingMonth ?? dateMonth) ?? ''),
     queryFn: () =>
       billingMonth
         ? transactionsApi.list({ billing_month: billingMonth })
         : transactionsApi.list({ date_month: dateMonth }),
   });
-  const { data: methods = [] } = useQuery({ queryKey: ['payment-methods', 'all'], queryFn: () => paymentMethodsApi.list(false) });
-  const { data: categories = [] } = useQuery({ queryKey: ['categories', 'all'], queryFn: () => categoriesApi.list(false) });
+  const { data: methods = [] } = useQuery({ queryKey: queryKeys.paymentMethods.list('all'), queryFn: () => paymentMethodsApi.list(false) });
+  const { data: categories = [] } = useQuery({ queryKey: queryKeys.categories.list('all'), queryFn: () => categoriesApi.list(false) });
 
   const methodMap = Object.fromEntries(methods.map((m) => [m.id, m]));
   const categoryMap = Object.fromEntries(categories.map((c) => [c.id, c]));
@@ -38,9 +39,7 @@ export default function TransactionList({ dateMonth, billingMonth }: Props) {
     mutationFn: ({ id, cascade }: { id: string; cascade: string }) =>
       transactionsApi.delete(id, cascade),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['analytics'] });
+      invalidateFor(qc, 'transaction');
       setDeleteTx(null);
     },
   });

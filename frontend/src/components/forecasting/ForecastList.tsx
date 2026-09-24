@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { forecastsApi } from '../../api/forecasts';
+import { queryKeys } from '../../api/queryKeys';
 import { Button } from '../ui/Button';
 
 export default function ForecastList() {
@@ -8,13 +9,17 @@ export default function ForecastList() {
   const navigate = useNavigate();
 
   const { data: forecasts = [], isLoading } = useQuery({
-    queryKey: ['forecasts'],
+    queryKey: queryKeys.forecasts.all,
     queryFn: forecastsApi.list,
   });
 
   const { mutate: deleteForecast } = useMutation({
     mutationFn: (id: string) => forecastsApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['forecasts'] }),
+    onSuccess: (_result, id) => {
+      qc.invalidateQueries({ queryKey: queryKeys.forecasts.all });
+      qc.removeQueries({ queryKey: queryKeys.forecasts.detail(id), exact: true });
+      qc.removeQueries({ queryKey: queryKeys.forecasts.projection(id), exact: true });
+    },
   });
 
   if (isLoading) return <div className="animate-pulse h-32 bg-muted-bg rounded" />;

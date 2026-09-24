@@ -6,6 +6,7 @@ import Modal from '../components/ui/Modal';
 import { Input } from '../components/ui/Input';
 import { Select } from '../components/ui/Select';
 import { accountsApi } from '../api/accounts';
+import { queryKeys, invalidateAssetOverride, invalidateFor } from '../api/queryKeys';
 import type { Asset } from '../types/api';
 import { fmt } from '../utils/format';
 
@@ -18,7 +19,7 @@ function AssetRow({ asset, year }: { asset: Asset; year: number }) {
     mutationFn: (amount: number | null) =>
       assetsApi.setOverride(year, asset.asset_type, asset.account_id ?? asset.asset_name, amount),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['assets', year] });
+      invalidateAssetOverride(qc, year);
       setEditing(false);
     },
   });
@@ -67,7 +68,7 @@ export default function AssetsPage() {
   const asOf = `${year}-12-01`;
 
   const { data: assets = [], isLoading } = useQuery({
-    queryKey: ['assets', year, asOf],
+    queryKey: queryKeys.assets.asOf(year, asOf),
     queryFn: () => assetsApi.year(year, asOf),
   });
 
@@ -79,7 +80,7 @@ export default function AssetsPage() {
         opening_balance: parseFloat(newBalance) || 0,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['assets', year] });
+      invalidateFor(qc, 'account');
       setAddOpen(false);
       setNewName('');
       setNewBalance('');

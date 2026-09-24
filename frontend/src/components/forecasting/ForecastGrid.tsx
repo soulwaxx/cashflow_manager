@@ -47,7 +47,7 @@ export default function ForecastGrid({ projection, onAddAdjustment }: Props) {
                   )}
                 </td>
                 {line.months.map((cell) => {
-                  const hasAdj = firstAdjustmentValidFrom !== null && firstAdjustmentValidFrom <= cell.month;
+                  const hasAdj = firstAdjustmentValidFrom !== null && firstAdjustmentValidFrom.slice(0, 7) <= cell.month;
                   return (
                     <td key={cell.month} className={`p-2 border border-line text-right tabular-nums text-primary ${hasAdj ? 'text-yellow-700 dark:text-yellow-400 font-medium' : ''}`}>
                       {fmt(cell.effective_amount)}
@@ -59,7 +59,7 @@ export default function ForecastGrid({ projection, onAddAdjustment }: Props) {
             );
           })}
           <tr className="bg-blue-50 dark:bg-blue-900/20 font-semibold">
-            <td className="p-2 border border-line sticky left-0 bg-blue-50 dark:bg-blue-900/20 text-primary">Monthly total</td>
+            <td className="p-2 border border-line sticky left-0 bg-blue-50 dark:bg-blue-900/20 text-primary">Monthly commitments</td>
             {projection.monthly_totals.map((mt) => (
               <td key={mt.month} className="p-2 border border-line text-right tabular-nums text-primary">{fmt(mt.total)}</td>
             ))}
