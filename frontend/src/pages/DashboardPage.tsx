@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { summaryApi } from '../api/summary';
 import { assetsApi } from '../api/assets';
+import { queryKeys } from '../api/queryKeys';
 import MonthNavigator from '../components/dashboard/MonthNavigator';
 import BankBalanceCard from '../components/dashboard/BankBalanceCard';
 import OutcomesByMethod from '../components/dashboard/OutcomesByMethod';
@@ -14,12 +15,12 @@ export default function DashboardPage() {
   const asOf = `${year}-${String(month).padStart(2, '0')}-01`;
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ['summary', year, month],
+    queryKey: queryKeys.summary.month(year, month),
     queryFn: () => summaryApi.month(year, month),
   });
 
   const { data: assets, isLoading: assetsLoading } = useQuery({
-    queryKey: ['assets', year, asOf],
+    queryKey: queryKeys.assets.asOf(year, asOf),
     queryFn: () => assetsApi.year(year, asOf),
   });
 

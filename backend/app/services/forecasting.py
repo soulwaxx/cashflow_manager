@@ -1,69 +1,54 @@
 import bisect
-from collections import defaultdict
+from decimal import Decimal, ROUND_HALF_EVEN
 
 from sqlalchemy.orm import Session
 from app.models.forecast import Forecast, ForecastLine, ForecastAdjustment
 from app.models.transaction import Transaction
 
+CENT = Decimal("0.01")
+
 
 def auto_generate_lines(forecast: Forecast, db: Session) -> None:
+    """Import monthly debit commitments still occurring in December of the base year.
+
+    Recurrences are finite materialized transactions, not live schedules. A
+    December occurrence is the explicit signal that a commitment crosses the
+    base-year boundary; saved forecast lines are independent snapshots.
     """
-    Create ForecastLines from recurring transactions in base_year.
-    Groups by root recurring transaction; uses average monthly amount.
-    Bulk-loads all siblings in one query to avoid N+1 per root.
-    """
-    year = forecast.base_year
-    # Look back 2 years so recurring transactions that started before base_year
-    # are still captured; children are not restricted to this window.
-    history_start = f"{year - 2:04d}-01-01"
-    year_end = f"{year:04d}-12-31"
-
-    recurring_roots = (
-        db.query(Transaction)
-        .filter_by(user_id=forecast.user_id)
-        .filter(
-            Transaction.recurrence_months.isnot(None),
-            Transaction.date >= history_start,
-            Transaction.date <= year_end,
-            Transaction.parent_transaction_id.is_(None),  # roots only
-        )
-        .all()
-    )
-    if not recurring_roots:
-        return
-
-    root_ids = [tx.id for tx in recurring_roots]
-
-    # Bulk-load all siblings (roots + children) in one query.
-    # No date restriction on siblings so we capture all occurrences regardless
-    # of when the root was created.
-    all_siblings = (
+    december = f"{forecast.base_year:04d}-12-"
+    occurrences = (
         db.query(Transaction)
         .filter(
             Transaction.user_id == forecast.user_id,
-            (Transaction.id.in_(root_ids)) | (Transaction.parent_transaction_id.in_(root_ids)),
+            Transaction.recurrence_months.isnot(None),
+            Transaction.transaction_direction == "debit",
+            Transaction.date.startswith(december),
         )
+        .order_by(Transaction.date.desc(), Transaction.id.desc())
         .all()
     )
-
-    # Group siblings by root_id
-    siblings_by_root: dict[str, list] = defaultdict(list)
-    for s in all_siblings:
-        root = s.parent_transaction_id or s.id
-        siblings_by_root[root].append(s)
-
-    for tx in recurring_roots:
-        siblings = siblings_by_root[tx.id]
-        avg_amount = sum(float(s.amount) for s in siblings) / max(len(siblings), 1)
+    root_ids = {tx.parent_transaction_id or tx.id for tx in occurrences}
+    owned_root_ids = {
+        root_id for (root_id,) in db.query(Transaction.id).filter(
+            Transaction.id.in_(root_ids), Transaction.user_id == forecast.user_id,
+            Transaction.recurrence_months.isnot(None),
+        ).all()
+    } if root_ids else set()
+    seen_roots: set[str] = set()
+    for tx in occurrences:
+        root_id = tx.parent_transaction_id or tx.id
+        if root_id not in owned_root_ids or root_id in seen_roots:
+            continue
+        seen_roots.add(root_id)
         db.add(ForecastLine(
             forecast_id=forecast.id,
             user_id=forecast.user_id,
-            source_transaction_id=tx.id,
+            source_transaction_id=root_id,
             category_id=tx.category_id,
             detail=tx.detail,
-            base_amount=avg_amount,
+            base_amount=tx.amount,
             payment_method_id=tx.payment_method_id,
-            billing_day=1,
+            billing_day=int(tx.date[-2:]),
         ))
 
 
@@ -84,13 +69,13 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
     period_from = f"{start_year:04d}-01"
     period_to = f"{end_year:04d}-12"
 
-    lines = db.query(ForecastLine).filter_by(forecast_id=forecast_id).all()
+    lines = db.query(ForecastLine).filter_by(forecast_id=forecast_id, user_id=user_id).all()
     # Bulk-load all adjustments in one query
     line_ids = [line.id for line in lines]
     all_adjs = (
         db.query(ForecastAdjustment)
-        .filter(ForecastAdjustment.forecast_line_id.in_(line_ids))
-        .order_by(ForecastAdjustment.valid_from)
+        .filter(ForecastAdjustment.forecast_line_id.in_(line_ids), ForecastAdjustment.user_id == user_id)
+        .order_by(ForecastAdjustment.valid_from, ForecastAdjustment.id)
         .all()
         if line_ids else []
     )
@@ -99,7 +84,11 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
         adj_by_line[a.forecast_line_id].append(a)
 
     result_lines = []
-    monthly_totals = {}
+    monthly_totals: dict[str, Decimal] = {
+        f"{year:04d}-{month:02d}": Decimal("0")
+        for year in range(start_year, end_year + 1)
+        for month in range(1, 13)
+    }
 
     for line in lines:
         adjs = adj_by_line[line.id]
@@ -118,13 +107,14 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
                     adj = adjs[idx]
                     adj_type = getattr(adj, "adjustment_type", "fixed") or "fixed"
                     if adj_type == "percentage":
-                        effective = float(line.base_amount) * (1 + float(adj.new_amount) / 100)
+                        effective = Decimal(line.base_amount) * (1 + Decimal(adj.new_amount) / 100)
                     else:
-                        effective = float(adj.new_amount)
+                        effective = Decimal(adj.new_amount)
                 else:
-                    effective = float(line.base_amount)
-                months_data.append({"month": month_str, "effective_amount": effective})
-                monthly_totals[month_str] = monthly_totals.get(month_str, 0) + effective
+                    effective = Decimal(line.base_amount)
+                effective = effective.quantize(CENT, rounding=ROUND_HALF_EVEN)
+                months_data.append({"month": month_str, "effective_amount": float(effective)})
+                monthly_totals[month_str] += effective
 
         result_lines.append({
             "line_id": line.id,
@@ -134,7 +124,7 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
             "billing_day": line.billing_day,
             "adjustments": [
                 {
-                    "id": a.id, "valid_from": a.valid_from[:7], "new_amount": float(a.new_amount),
+                    "id": a.id, "valid_from": a.valid_from, "new_amount": float(a.new_amount),
                     "adjustment_type": getattr(a, "adjustment_type", "fixed") or "fixed",
                 }
                 for a in adjs
@@ -146,7 +136,7 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
     yearly_totals = {}
     for month_str, total in monthly_totals.items():
         year_str = month_str[:4]
-        yearly_totals[year_str] = yearly_totals.get(year_str, 0) + total
+        yearly_totals[year_str] = yearly_totals.get(year_str, Decimal("0")) + total
 
     return {
         "forecast_id": forecast_id,
@@ -154,6 +144,6 @@ def project_forecast(forecast_id: str, user_id: str, db: Session) -> dict:
         "projection_years": forecast.projection_years,
         "period": {"from": period_from, "to": period_to},
         "lines": result_lines,
-        "monthly_totals": [{"month": k, "total": round(v, 2)} for k, v in sorted(monthly_totals.items())],
-        "yearly_totals": [{"year": int(k), "total": round(v, 2)} for k, v in sorted(yearly_totals.items())],
+        "monthly_totals": [{"month": k, "total": float(v)} for k, v in sorted(monthly_totals.items())],
+        "yearly_totals": [{"year": int(k), "total": float(v)} for k, v in sorted(yearly_totals.items())],
     }

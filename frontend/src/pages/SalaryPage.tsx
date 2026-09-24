@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { salaryApi } from '../api/salary';
 import { taxConfigApi } from '../api/taxConfig';
+import { queryKeys, invalidateFor } from '../api/queryKeys';
 import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import Modal from '../components/ui/Modal';
@@ -23,12 +24,12 @@ function BreakdownPanel({ config }: { config: SalaryConfig }) {
   };
 
   const { data: breakdown } = useQuery({
-    queryKey: ['salary', 'calculate', calculateParams],
+    queryKey: queryKeys.salary.calculate(calculateParams),
     queryFn: () => salaryApi.calculate(calculateParams),
   });
 
   const { data: taxConfigs = [] } = useQuery({
-    queryKey: ['tax-config'],
+    queryKey: queryKeys.taxConfig.all,
     queryFn: taxConfigApi.list,
   });
 
@@ -148,7 +149,7 @@ export default function SalaryPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const { data: configs = [], isLoading } = useQuery({
-    queryKey: ['salary'],
+    queryKey: queryKeys.salary.list,
     queryFn: salaryApi.list,
   });
 
@@ -170,7 +171,7 @@ export default function SalaryPage() {
   const { mutate: addPeriod, isPending: adding } = useMutation({
     mutationFn: (d: PeriodFields) => salaryApi.create(fieldsToBody(d)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['salary'] });
+      invalidateFor(qc, 'salary');
       setAddOpen(false);
       reset();
     },
@@ -179,7 +180,7 @@ export default function SalaryPage() {
   const { mutate: updatePeriod, isPending: updating } = useMutation({
     mutationFn: (d: PeriodFields) => salaryApi.update(editConfig!.id, fieldsToBody(d)),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['salary'] });
+      invalidateFor(qc, 'salary');
       setEditConfig(null);
     },
   });

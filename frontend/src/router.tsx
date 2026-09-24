@@ -3,6 +3,7 @@ import { lazy, Suspense, type ReactElement } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useCurrentUser } from './hooks/useCurrentUser';
 import { onboardingApi } from './api/onboarding';
+import { queryKeys } from './api/queryKeys';
 
 const AppShell = lazy(() => import('./components/layout/AppShell'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -30,7 +31,7 @@ function lazyElement(node: ReactElement) {
 function AuthGuard() {
   const { data: user, isLoading } = useCurrentUser();
   const { data: status, isLoading: statusLoading, isError, refetch } = useQuery({
-    queryKey: ['onboarding', 'status'],
+    queryKey: queryKeys.onboarding.status,
     queryFn: onboardingApi.status,
     enabled: !!user,
     retry: false,
@@ -62,7 +63,7 @@ function AuthGuard() {
 function SetupGuard() {
   const { data: user, isLoading } = useCurrentUser();
   const { data: status, isLoading: statusLoading } = useQuery({
-    queryKey: ['onboarding', 'status'],
+    queryKey: queryKeys.onboarding.status,
     queryFn: onboardingApi.status,
     enabled: !!user,
     retry: false,

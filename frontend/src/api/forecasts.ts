@@ -1,6 +1,7 @@
 import { apiClient } from './client';
 import type {
   Forecast,
+  ForecastDetail,
   ForecastProjection,
   ForecastLine,
   ForecastLineRequest,
@@ -11,11 +12,11 @@ export const forecastsApi = {
   list: () =>
     apiClient.get<Forecast[]>('/forecasts').then((r) => r.data),
   get: (id: string) =>
-    apiClient.get<Forecast>(`/forecasts/${id}`).then((r) => r.data),
+    apiClient.get<ForecastDetail>(`/forecasts/${id}`).then((r) => r.data),
   create: (body: { name: string; base_year: number; projection_years: number }) =>
-    apiClient.post<Forecast>('/forecasts', body).then((r) => r.data),
+    apiClient.post<ForecastDetail>('/forecasts', body).then((r) => r.data),
   update: (id: string, body: { name?: string; projection_years?: number }) =>
-    apiClient.put<Forecast>(`/forecasts/${id}`, body).then((r) => r.data),
+    apiClient.put<ForecastDetail>(`/forecasts/${id}`, body).then((r) => r.data),
   delete: (id: string) =>
     apiClient.delete(`/forecasts/${id}`),
 

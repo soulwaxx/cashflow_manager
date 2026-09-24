@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useOnboarding } from '../../contexts/OnboardingContext';
 import { onboardingApi } from '../../api/onboarding';
+import { queryKeys } from '../../api/queryKeys';
 import { Button } from '../ui/Button';
 import type { OnboardingPayload } from '../../types/api';
 
@@ -15,7 +16,7 @@ export default function StepReview() {
   const { mutate, isPending } = useMutation({
     mutationFn: () => onboardingApi.submit(data as OnboardingPayload),
     onSuccess: () => {
-      qc.setQueryData(['onboarding', 'status'], { complete: true });
+      qc.setQueryData(queryKeys.onboarding.status, { complete: true });
       navigate('/');
     },
     onError: () => setError('Submission failed. Please try again.'),

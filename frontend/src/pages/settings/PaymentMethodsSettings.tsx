@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { paymentMethodsApi } from '../../api/paymentMethods';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { Button } from '../../components/ui/Button';
 import Modal from '../../components/ui/Modal';
 import { Input } from '../../components/ui/Input';
@@ -40,18 +41,18 @@ export default function PaymentMethodsSettings() {
   const [editHasStampDuty, setEditHasStampDuty] = useState(false);
 
   const { data: methods = [], isLoading } = useQuery({
-    queryKey: ['payment-methods', 'all'],
+    queryKey: queryKeys.paymentMethods.list('all'),
     queryFn: () => paymentMethodsApi.list(false),
   });
 
   const { mutate: deactivate } = useMutation({
     mutationFn: (id: string) => paymentMethodsApi.update(id, { is_active: false }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-methods'] }),
+    onSuccess: () => invalidateFor(qc, 'paymentMethod'),
   });
 
   const { mutate: reactivate } = useMutation({
     mutationFn: (id: string) => paymentMethodsApi.update(id, { is_active: true }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['payment-methods'] }),
+    onSuccess: () => invalidateFor(qc, 'paymentMethod'),
   });
 
   const { mutate: editMutate, isPending: editing } = useMutation({
@@ -60,7 +61,7 @@ export default function PaymentMethodsSettings() {
     }) =>
       paymentMethodsApi.update(id, { name, linked_bank_id, effective_billing_month, has_stamp_duty }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['payment-methods'] });
+      invalidateFor(qc, 'paymentMethod');
       setEditMethod(null);
     },
   });
@@ -69,7 +70,7 @@ export default function PaymentMethodsSettings() {
     mutationFn: ({ id, balance }: { id: string; balance: number }) =>
       paymentMethodsApi.setMainBank(id, balance),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['payment-methods'] });
+      invalidateFor(qc, 'paymentMethod');
       setSwitchBankId(null);
       setNewBalance('');
     },
@@ -94,7 +95,7 @@ export default function PaymentMethodsSettings() {
   const { mutate: createMethod, isPending: creating, error: createMutationError, reset: resetCreateMutation } = useMutation({
     mutationFn: (body: Omit<PaymentMethod, 'id' | 'user_id'>) => paymentMethodsApi.create(body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['payment-methods'] });
+      invalidateFor(qc, 'paymentMethod');
       setAddOpen(false);
       reset();
     },

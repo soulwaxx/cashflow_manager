@@ -62,7 +62,7 @@ models/      ← SQLAlchemy ORM models
 | `SalaryConfig` | Effective-dated gross salary, contribution/tax rates, benefits, and computed monthly net |
 | `TaxConfig` | Effective-dated Italian tax parameters; `user_id=NULL` rows are seeded defaults and user-owned rows are overrides |
 | `Forecast` | Saved projection scenario with base year and projection horizon |
-| `ForecastLine` | A monthly projection line with amount, billing day, optional source transaction/category/payment method, and notes |
+| `ForecastLine` | An editable monthly spending-commitment snapshot with amount, reference day, optional source transaction/category/payment method, and notes |
 | `ForecastAdjustment` | Per-line effective-date adjustment: `forecast_line_id`, `valid_from`, `new_amount`, and `adjustment_type` (`fixed`\|`percentage`) |
 | `MainBankHistory` | Effective-dated main-bank selection and opening-balance reset |
 | `UserSetting` | Per-user key/value settings used for onboarding and tracking start; non-bank opening balances belong to `Account` rows |
@@ -99,6 +99,12 @@ Debit cards, credit cards, and revolving cards require an owned bank `linked_ban
 | `prepaid`, `cash` | `income` / Income | no impact | income + amount |
 | `prepaid`, `cash` | `debit` / Purchase | no impact | outcome + amount |
 
+### Forecast contract
+
+A forecast projects monthly **spending commitments**, not future bank balances or net cash flow. When a forecast is created, it imports recurring debit purchases with an occurrence in December of its selected base year; income, refunds, and card payments are excluded. The December occurrence supplies the starting amount and reference day, even when it is the only occurrence. A series ending before December or starting after the base year is not imported. Selection uses the transaction occurrence date, not its payment method's billing month.
+
+Imported lines are snapshots: changing or deleting source transactions does not rewrite a saved forecast. Users can add, edit, and delete lines and adjustments independently. All lines project monthly throughout the selected future years. Fixed adjustments replace a line's monthly amount; percentage adjustments apply to its original base amount, not to a preceding adjustment. Adjustment start dates are first-of-month dates within the projection period; monthly and yearly totals sum cent-rounded commitments.
+
 ### Routers (all under `/api/v1`)
 
 `auth`, `onboarding`, `accounts`, `payment_methods`, `categories`, `salary`, `tax_config`, `transactions`, `transfers`, `summary`, `assets`, `analytics`, `forecasts`, `user_settings`, `users`
@@ -110,7 +116,7 @@ Debit cards, credit cards, and revolving cards require an owned bank `linked_ban
 | Service | Key responsibilities |
 |---|---|
 | `auth` | Password hashing and JWT creation/validation |
-| `forecasting` | Build monthly forecast-line and aggregate projections |
+| `forecasting` | Import ongoing monthly debit commitments and project spending totals, not future bank balances |
 | `bank_balance` | Compute running bank balance from transaction history |
 | `billing` | Resolve billing month for credit card transactions |
 | `recurrence` | Generate recurrence instances for a date range |
@@ -167,7 +173,7 @@ src/
 ### Data flow
 
 1. `api/client.ts`: Axios instance pointed at `/api/v1` with `withCredentials: true`; Vite proxies `/api` → `http://localhost:8000` in development
-2. Pages and feature components call the domain API modules through TanStack Query; `hooks/` contains only auth, current-user, and theme hooks
+2. Pages and feature components call the domain API modules through TanStack Query; `api/queryKeys.ts` defines query keys and targeted mutation invalidations. `hooks/` contains only auth, current-user, and theme hooks
 3. JWT is stored as an `HttpOnly` cookie. The frontend never reads it directly.
 4. The setup flow shares the app-wide TanStack Query client, so onboarding completion updates the same `['onboarding','status']` cache used by route guards
 5. The transfers page uses paged `/transfers?limit=&offset=` fetches and incrementally loads older history instead of pulling the full transfer table in a single request

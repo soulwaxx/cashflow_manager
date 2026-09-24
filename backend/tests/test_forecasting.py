@@ -666,3 +666,230 @@ def test_forecast_projection_bisect_adjustment(client):
     # From 2027-09 onward: second adjustment (300) applies
     assert months["2027-09"] == pytest.approx(300.0), f"2027-09 should be 300, got {months['2027-09']}"
     assert months["2028-12"] == pytest.approx(300.0), f"2028-12 should be 300, got {months['2028-12']}"
+
+
+def test_import_only_december_debit_commitments_and_latest_amount(client):
+    pm_id, cat_id = _setup(client)
+    card_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyCard")
+    for date, detail, direction, method, count in [
+        ("2026-02-10", "Expired loan", "debit", pm_id, 2),
+        ("2027-01-10", "Future loan", "debit", pm_id, 12),
+        ("2026-12-15", "Salary", "income", pm_id, 1),
+        ("2026-12-16", "Card payment", "credit", card_id, 1),
+        ("2026-12-18", "One occurrence", "debit", pm_id, 1),
+    ]:
+        response = client.post("/api/v1/transactions", json={
+            "date": date, "detail": detail, "transaction_direction": direction,
+            "payment_method_id": method, "category_id": cat_id,
+            "amount": 100, "recurrence_months": count,
+        })
+        assert response.status_code == 200, response.text
+
+    root = client.post("/api/v1/transactions", json={
+        "date": "2023-01-20", "detail": "Old ongoing loan", "amount": 50,
+        "payment_method_id": pm_id, "category_id": cat_id,
+        "transaction_direction": "debit", "recurrence_months": 48,
+    })
+    assert root.status_code == 200, root.text
+    december = next(tx for tx in client.get("/api/v1/transactions?date_month=2026-12").json()
+                    if tx["detail"] == "Old ongoing loan")
+    assert client.put(f"/api/v1/transactions/{december['id']}", json={"amount": 75}).status_code == 200
+
+    fc_id = client.post("/api/v1/forecasts", json={
+        "name": "Boundary", "base_year": 2026, "projection_years": 1,
+    }).json()["id"]
+    lines = {line["detail"]: line for line in client.get(f"/api/v1/forecasts/{fc_id}").json()["lines"]}
+    assert set(lines) == {"Car loan", "One occurrence", "Old ongoing loan"}
+    assert lines["Old ongoing loan"]["base_amount"] == 75
+    assert lines["Old ongoing loan"]["billing_day"] == 20
+    projection = client.get(f"/api/v1/forecasts/{fc_id}/projection").json()
+    old_line = next(line for line in projection["lines"] if line["detail"] == "Old ongoing loan")
+    assert len(old_line["months"]) == 12
+    assert all(month["effective_amount"] == 75 for month in old_line["months"])
+
+
+def test_import_uses_occurrence_not_credit_card_billing_month(client):
+    _setup(client)
+    card_id = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyCard")
+    assert client.post("/api/v1/transactions", json={
+        "date": "2026-12-22", "detail": "Card subscription", "amount": 12,
+        "payment_method_id": card_id, "transaction_direction": "debit", "recurrence_months": 1,
+    }).status_code == 200
+    fc = client.post("/api/v1/forecasts", json={"name": "Cards", "base_year": 2026, "projection_years": 1})
+    assert "Card subscription" in {line["detail"] for line in fc.json()["lines"]}
+
+
+def test_projection_totals_are_rounded_monthly_and_include_empty_months(client):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Cents", "base_year": 2025, "projection_years": 1}).json()
+    assert len(client.get(f"/api/v1/forecasts/{fc['id']}/projection").json()["monthly_totals"]) == 12
+    line = client.post(f"/api/v1/forecasts/{fc['id']}/lines", json={
+        "detail": "Cents", "base_amount": 0.01,
+    }).json()
+    client.post(f"/api/v1/forecasts/{fc['id']}/lines/{line['id']}/adjustments", json={
+        "valid_from": "2026-01-01", "new_amount": 50, "adjustment_type": "percentage",
+    })
+    result = client.get(f"/api/v1/forecasts/{fc['id']}/projection").json()
+    assert len(result["monthly_totals"]) == 12
+    assert result["monthly_totals"][0]["total"] == 0.02
+    assert result["yearly_totals"][0]["total"] == 0.24
+
+
+@pytest.mark.parametrize("payload", [
+    {"base_year": 1999, "projection_years": 1},
+    {"base_year": 2101, "projection_years": 1},
+    {"base_year": 2026, "projection_years": 0},
+    {"base_year": 2026, "projection_years": 11},
+])
+def test_forecast_rejects_invalid_years(client, payload):
+    _setup(client)
+    response = client.post("/api/v1/forecasts", json={"name": "Invalid", **payload})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("amount", [-1, "NaN", "Infinity", 1.234, 10000000000])
+def test_forecast_line_rejects_invalid_amounts(client, amount):
+    _setup(client)
+    fc_id = client.post("/api/v1/forecasts", json={"name": "Valid", "base_year": 2026, "projection_years": 1}).json()["id"]
+    response = client.post(f"/api/v1/forecasts/{fc_id}/lines", json={"detail": "Line", "base_amount": amount})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("date_value", ["2027-02-02", "2027-02-30", "2027-13-01", "20270201", "2026-12-01", "2028-01-01"])
+def test_forecast_adjustment_rejects_invalid_dates(client, date_value):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Dates", "base_year": 2026, "projection_years": 1}).json()
+    response = client.post(f"/api/v1/forecasts/{fc['id']}/lines/{fc['lines'][0]['id']}/adjustments", json={
+        "valid_from": date_value, "new_amount": 10,
+    })
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("adj_type,amount", [
+    ("fixed", -1), ("fixed", "NaN"), ("fixed", 1.234),
+    ("percentage", -100.01), ("percentage", "Infinity"), ("percentage", 1.234),
+])
+def test_forecast_adjustment_rejects_invalid_amounts(client, adj_type, amount):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Values", "base_year": 2026, "projection_years": 1}).json()
+    response = client.post(f"/api/v1/forecasts/{fc['id']}/lines/{fc['lines'][0]['id']}/adjustments", json={
+        "valid_from": "2027-01-01", "new_amount": amount, "adjustment_type": adj_type,
+    })
+    assert response.status_code == 422
+
+
+def test_forecast_adjustment_duplicate_month_rejected_on_create_and_update(client):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Duplicates", "base_year": 2026, "projection_years": 1}).json()
+    url = f"/api/v1/forecasts/{fc['id']}/lines/{fc['lines'][0]['id']}/adjustments"
+    first = client.post(url, json={"valid_from": "2027-01-01", "new_amount": 10})
+    assert first.status_code == 200
+    assert client.post(url, json={"valid_from": "2027-01-01", "new_amount": 20}).status_code == 422
+    second = client.post(url, json={"valid_from": "2027-02-01", "new_amount": 20})
+    assert second.status_code == 200
+    assert client.put(f"{url}/{second.json()['id']}", json={"valid_from": "2027-01-01"}).status_code == 422
+    assert client.put(f"{url}/{second.json()['id']}", json={"adjustment_type": "percentage", "new_amount": -100}).status_code == 200
+    assert client.put(f"{url}/{second.json()['id']}", json={"adjustment_type": "fixed"}).status_code == 422
+
+
+def test_forecast_response_contract_is_consistent_across_endpoints(client):
+    _setup(client)
+    created = client.post("/api/v1/forecasts", json={
+        "name": "Contract", "base_year": 2026, "projection_years": 1,
+    }).json()
+    fc_id = created["id"]
+    listed = next(fc for fc in client.get("/api/v1/forecasts").json() if fc["id"] == fc_id)
+    detail = client.get(f"/api/v1/forecasts/{fc_id}").json()
+    assert set(listed) == set(created) - {"lines"}
+    assert set(detail) == set(created)
+    line = detail["lines"][0]
+    assert set(line) == {
+        "id", "source_transaction_id", "detail", "category_id", "base_amount",
+        "billing_day", "payment_method_id", "notes", "adjustments",
+    }
+    adj = client.post(f"/api/v1/forecasts/{fc_id}/lines/{line['id']}/adjustments", json={
+        "valid_from": "2027-03-01", "new_amount": 500,
+    }).json()
+    assert set(adj) == {"id", "forecast_line_id", "valid_from", "new_amount", "adjustment_type"}
+    projection = client.get(f"/api/v1/forecasts/{fc_id}/projection").json()
+    projected = next(row for row in projection["lines"] if row["line_id"] == line["id"])
+    assert projected["adjustments"][0]["valid_from"] == adj["valid_from"]
+    assert set(projection) == {"forecast_id", "base_year", "projection_years", "period", "lines", "monthly_totals", "yearly_totals"}
+    assert len(projected["months"]) == len(projection["monthly_totals"]) == 12
+
+
+def test_forecast_line_can_clear_nullable_references_and_returns_consistent_contract(client):
+    pm_id, cat_id = _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "References", "base_year": 2026, "projection_years": 1}).json()
+    assert fc["user_id"] and fc["created_at"] and fc["updated_at"]
+    imported = fc["lines"][0]
+    assert imported["source_transaction_id"] is not None
+    response = client.put(f"/api/v1/forecasts/{fc['id']}/lines/{imported['id']}", json={
+        "detail": "Repaired", "base_amount": 100, "category_id": None,
+        "payment_method_id": None, "notes": None,
+    })
+    assert response.status_code == 200
+    assert response.json()["category_id"] is None
+    assert response.json()["payment_method_id"] is None
+    assert response.json()["source_transaction_id"] == imported["source_transaction_id"]
+    assert client.get(f"/api/v1/forecasts/{fc['id']}").json()["lines"][0]["detail"] == "Repaired"
+    assert pm_id and cat_id
+
+
+def test_imported_forecast_is_not_changed_by_later_transaction_edits(client):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Snapshot", "base_year": 2026, "projection_years": 1}).json()
+    line = fc["lines"][0]
+    tx_id = line["source_transaction_id"]
+    assert client.put(f"/api/v1/transactions/{tx_id}", json={"amount": 999}).status_code == 200
+    assert client.get(f"/api/v1/forecasts/{fc['id']}").json()["lines"][0]["base_amount"] == 350
+
+
+def test_import_ignores_cross_user_parent_links(client, db):
+    from app.models.transaction import Transaction
+    from app.models.user import User
+
+    alice_pm, _ = _setup(client)
+    alice_id = db.query(User).filter_by(email="alice@example.com").one().id
+    client.post("/api/v1/auth/logout")
+    client.post("/api/v1/auth/register", json={
+        "email": "forecast-parent@example.com", "password": "Password1!", "name": "Parent"
+    })
+    client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
+    bob_pm = next(pm["id"] for pm in client.get("/api/v1/payment-methods").json() if pm["name"] == "MyBank")
+    bob_root = client.post("/api/v1/transactions", json={
+        "date": "2026-12-03", "detail": "Other user's loan", "amount": 10,
+        "payment_method_id": bob_pm, "transaction_direction": "debit", "recurrence_months": 1,
+    }).json()["id"]
+    db.add(Transaction(
+        user_id=alice_id, date="2026-12-04", detail="Corrupt cross-user child", amount=99,
+        payment_method_id=alice_pm, transaction_direction="debit", billing_month="2026-12-01",
+        recurrence_months=2, parent_transaction_id=bob_root,
+    ))
+    db.commit()
+    client.post("/api/v1/auth/logout")
+    client.post("/api/v1/auth/login", json={
+        "email": "alice@example.com", "password": "Password1!"
+    })
+    fc = client.post("/api/v1/forecasts", json={"name": "Owned roots", "base_year": 2026, "projection_years": 1}).json()
+    assert "Corrupt cross-user child" not in {line["detail"] for line in fc["lines"]}
+
+
+def test_forecast_line_and_adjustment_cross_user_mutations_are_isolated(client):
+    _setup(client)
+    fc = client.post("/api/v1/forecasts", json={"name": "Private", "base_year": 2026, "projection_years": 1}).json()
+    line_id = fc["lines"][0]["id"]
+    adj_id = client.post(f"/api/v1/forecasts/{fc['id']}/lines/{line_id}/adjustments", json={
+        "valid_from": "2027-01-01", "new_amount": 500,
+    }).json()["id"]
+    client.post("/api/v1/auth/logout")
+    client.post("/api/v1/auth/register", json={
+        "email": "forecast-other@example.com", "password": "Password1!", "name": "Other"
+    })
+    client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
+    base = f"/api/v1/forecasts/{fc['id']}/lines/{line_id}"
+    assert client.get(f"/api/v1/forecasts/{fc['id']}").status_code == 404
+    assert client.put(base, json={"detail": "Hijack", "base_amount": 1}).status_code == 404
+    assert client.delete(base).status_code == 404
+    assert client.put(f"{base}/adjustments/{adj_id}", json={"new_amount": 1}).status_code == 404
+    assert client.delete(f"{base}/adjustments/{adj_id}").status_code == 404

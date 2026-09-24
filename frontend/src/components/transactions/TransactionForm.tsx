@@ -5,6 +5,7 @@ import { addMonths, format } from 'date-fns';
 import { transactionsApi } from '../../api/transactions';
 import { paymentMethodsApi } from '../../api/paymentMethods';
 import { categoriesApi } from '../../api/categories';
+import { queryKeys, invalidateFor } from '../../api/queryKeys';
 import { Input } from '../ui/Input';
 import { Select } from '../ui/Select';
 import { Button } from '../ui/Button';
@@ -69,8 +70,8 @@ export default function TransactionForm({ onSuccess, initial }: Props) {
         },
   });
 
-  const { data: methods = [] } = useQuery({ queryKey: ['payment-methods', 'active'], queryFn: () => paymentMethodsApi.list() });
-  const { data: categories = [] } = useQuery({ queryKey: ['categories', 'active'], queryFn: () => categoriesApi.list() });
+  const { data: methods = [] } = useQuery({ queryKey: queryKeys.paymentMethods.list('active'), queryFn: () => paymentMethodsApi.list() });
+  const { data: categories = [] } = useQuery({ queryKey: queryKeys.categories.list('active'), queryFn: () => categoriesApi.list() });
 
   const selectedMethodId = watch('payment_method_id');
   const selectedMethod = methods.find((m) => m.id === selectedMethodId);
@@ -147,9 +148,7 @@ export default function TransactionForm({ onSuccess, initial }: Props) {
     },
     onSuccess: () => {
       setSubmitError(null);
-      qc.invalidateQueries({ queryKey: ['transactions'] });
-      qc.invalidateQueries({ queryKey: ['summary'] });
-      qc.invalidateQueries({ queryKey: ['analytics'] });
+      invalidateFor(qc, 'transaction');
       onSuccess();
     },
     onError: (err: unknown) => {
