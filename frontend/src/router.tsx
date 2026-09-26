@@ -16,8 +16,6 @@ const TransfersPage = lazy(() => import('./pages/TransfersPage'));
 const AssetsPage = lazy(() => import('./pages/AssetsPage'));
 const SalaryPage = lazy(() => import('./pages/SalaryPage'));
 const AnalyticsPage = lazy(() => import('./pages/AnalyticsPage'));
-const ForecastingPage = lazy(() => import('./pages/ForecastingPage'));
-const ForecastDetailPage = lazy(() => import('./pages/ForecastDetailPage'));
 const SettingsPage = lazy(() => import('./pages/settings/SettingsPage'));
 const PaymentMethodsSettings = lazy(() => import('./pages/settings/PaymentMethodsSettings'));
 const CategoriesSettings = lazy(() => import('./pages/settings/CategoriesSettings'));
@@ -97,8 +95,6 @@ export function createRouter() {
           { path: '/assets', element: lazyElement(<AssetsPage />) },
           { path: '/salary', element: lazyElement(<SalaryPage />) },
           { path: '/analytics', element: lazyElement(<AnalyticsPage />) },
-          { path: '/forecasting', element: lazyElement(<ForecastingPage />) },
-          { path: '/forecasting/:id', element: lazyElement(<ForecastDetailPage />) },
           {
             path: '/settings',
             element: lazyElement(<SettingsPage />),

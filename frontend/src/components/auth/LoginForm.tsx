@@ -44,7 +44,7 @@ export default function LoginForm() {
           <Input label="Email" type="email" autoComplete="email" {...register('email', { required: true })} />
           <Input label="Password" type="password" autoComplete="current-password" {...register('password', { required: true })} />
           {error && (
-            <div role="alert" className="text-sm text-red-600 bg-red-50 rounded p-2">
+            <div role="alert" className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
               {error}
             </div>
           )}
@@ -57,7 +57,7 @@ export default function LoginForm() {
       )}
       {oidcEnabled && (
         <div className="text-center">
-          <a href={authApi.oidcLoginUrl()} className="text-sm text-blue-600 hover:underline">
+          <a href={authApi.oidcLoginUrl()} className="inline-flex min-h-11 items-center text-sm text-blue-700 dark:text-blue-300 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
             Sign in with SSO
           </a>
         </div>

@@ -57,7 +57,4 @@ export const handlers = [
   http.get('/api/v1/categories', () =>
     HttpResponse.json([])
   ),
-  http.get('/api/v1/forecasts', () =>
-    HttpResponse.json([])
-  ),
 ];

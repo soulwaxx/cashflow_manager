@@ -6,7 +6,6 @@ from tests.test_onboarding import WIZARD_PAYLOAD
 def _snapshot_user_rows(db, user_id):
     from app.models.asset import Asset
     from app.models.category import Category
-    from app.models.forecast import Forecast, ForecastAdjustment, ForecastLine
     from app.models.payment_method import MainBankHistory, PaymentMethod
     from app.models.salary import SalaryConfig
     from app.models.tax import TaxConfig
@@ -16,7 +15,7 @@ def _snapshot_user_rows(db, user_id):
 
     models = (
         UserSetting, PaymentMethod, MainBankHistory, Category, SalaryConfig, TaxConfig,
-        Transaction, Transfer, Asset, Forecast, ForecastLine, ForecastAdjustment,
+        Transaction, Transfer, Asset,
     )
     return {
         model.__tablename__: [
@@ -68,7 +67,6 @@ def test_generic_settings_cannot_bypass_completed_onboarding(client, db, key, va
     """Protected settings cannot enable a second onboarding reset or alter user rows."""
     from app.models.asset import Asset
     from app.models.category import Category
-    from app.models.forecast import Forecast, ForecastAdjustment, ForecastLine
     from app.models.payment_method import PaymentMethod
     from app.models.tax import TaxConfig
     from app.models.transaction import Transaction
@@ -92,15 +90,6 @@ def test_generic_settings_cannot_bypass_completed_onboarding(client, db, key, va
         from_payment_method_id=main_bank.id,
     ))
     db.add(Asset(user_id=user.id, year=2026, asset_type="saving", asset_name="Manual", manual_override=123))
-    forecast = Forecast(user_id=user.id, name="Existing forecast", base_year=2026, projection_years=1)
-    db.add(forecast)
-    db.flush()
-    line = ForecastLine(user_id=user.id, forecast_id=forecast.id, detail="Existing line", base_amount=10)
-    db.add(line)
-    db.flush()
-    db.add(ForecastAdjustment(
-        user_id=user.id, forecast_line_id=line.id, valid_from="2027-01-01", new_amount=20,
-    ))
     db.add(TaxConfig(user_id=user.id, valid_from="2027-01-01"))
     db.commit()
     before = _snapshot_user_rows(db, user.id)

@@ -26,22 +26,22 @@ export default function StepAdditionalBanks() {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Additional bank accounts (optional)</h2>
-      <div className="flex gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input label="Account name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
         <Input label="Balance (€)" type="number" step="0.01" value={balance} onChange={(e) => setBalance(e.target.value)} />
-        <Button variant="secondary" type="button" onClick={add} className="self-end">Add</Button>
+        <Button variant="secondary" type="button" onClick={add} className="self-end sm:col-span-2 sm:justify-self-start">Add</Button>
       </div>
       {accounts.length > 0 && (
         <ul className="text-sm space-y-1">
           {accounts.map((a, i) => (
-            <li key={i} className="flex justify-between border rounded px-3 py-1">
+            <li key={i} className="flex flex-wrap justify-between gap-2 border border-line bg-subtle rounded-lg px-3 py-2 break-words">
               <span>{a.name}</span>
               <span>€{a.opening_balance.toFixed(2)}</span>
             </li>
           ))}
         </ul>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" type="button" onClick={() => setStep(2)}>Back</Button>
         <Button type="button" onClick={next}>Next</Button>
       </div>

@@ -25,7 +25,7 @@ export default function StepMainBank() {
       <h2 className="text-lg font-semibold">Main bank account</h2>
       <Input label="Account name" type="text" {...register('name', { required: true })} />
       <Input label="Current balance (€)" type="number" step="0.01" {...register('opening_balance', { required: true })} />
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" type="button" onClick={() => setStep(1)}>Back</Button>
         <Button type="submit">Next</Button>
       </div>

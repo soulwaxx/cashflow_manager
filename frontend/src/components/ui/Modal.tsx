@@ -75,11 +75,11 @@ export default function Modal({ open, onClose, title, children, fullScreenMobile
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`bg-surface shadow-xl p-5 sm:p-6 w-full ${fullScreenMobile ? 'h-full max-h-full rounded-none sm:h-auto sm:max-h-[90vh] sm:rounded-xl' : 'max-h-[90vh] rounded-t-2xl sm:rounded-xl'} sm:max-w-lg overflow-y-auto`}
+        className={`bg-surface shadow-xl p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:p-6 w-full ${fullScreenMobile ? 'h-full max-h-full rounded-none sm:h-auto sm:max-h-[90vh] sm:rounded-xl' : 'max-h-[90dvh] rounded-t-2xl sm:rounded-xl'} sm:max-w-lg overflow-y-auto overscroll-contain`}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 id={titleId} className="text-lg font-semibold text-primary">{title}</h2>
-          <button aria-label="Close modal" onClick={onClose} className="text-faint hover:text-secondary text-xl">×</button>
+          <button aria-label="Close modal" onClick={onClose} className="min-h-11 min-w-11 rounded-lg text-faint hover:text-secondary text-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">×</button>
         </div>
         {children}
       </div>

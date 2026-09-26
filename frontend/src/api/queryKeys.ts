@@ -40,11 +40,6 @@ export const queryKeys = {
     calculate: (params: object) => ['salary', 'calculate', params] as const,
   },
   taxConfig: { all: ['tax-config'] as const },
-  forecasts: {
-    all: ['forecasts'] as const,
-    detail: (id: string) => ['forecast', id] as const,
-    projection: (id: string) => ['forecast-projection', id] as const,
-  },
 };
 
 const dependencies = {
@@ -63,10 +58,4 @@ export function invalidateFor(qc: QueryClient, domain: keyof typeof dependencies
 
 export function invalidateAssetOverride(qc: QueryClient, year: number): void {
   qc.invalidateQueries({ queryKey: queryKeys.assets.year(year) });
-}
-
-export function invalidateForecast(qc: QueryClient, id: string, includeList = false): void {
-  if (includeList) qc.invalidateQueries({ queryKey: queryKeys.forecasts.all });
-  qc.invalidateQueries({ queryKey: queryKeys.forecasts.detail(id) });
-  qc.invalidateQueries({ queryKey: queryKeys.forecasts.projection(id) });
 }

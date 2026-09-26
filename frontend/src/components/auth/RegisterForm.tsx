@@ -32,7 +32,7 @@ export default function RegisterForm() {
       <Input label="Name" type="text" autoComplete="name" {...register('name', { required: true })} />
       <Input label="Password" type="password" autoComplete="new-password" {...register('password', { required: true, minLength: 8 })} />
       {error && (
-        <div role="alert" className="text-sm text-red-600 bg-red-50 rounded p-2">
+        <div role="alert" className="text-sm text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">
           {error}
         </div>
       )}

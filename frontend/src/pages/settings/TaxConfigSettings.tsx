@@ -48,8 +48,8 @@ export default function TaxConfigSettings() {
         <Button onClick={() => setAddOpen(true)}>+ Add period</Button>
       </div>
       {configs.map((cfg) => (
-        <div key={cfg.id} className="bg-surface border border-line rounded-lg p-4 text-sm">
-          <div className="flex justify-between items-start mb-2">
+        <div key={cfg.id} className="bg-surface border border-line rounded-xl p-4 sm:p-5 text-sm">
+          <div className="flex flex-wrap justify-between items-center gap-2 mb-3">
             <span className="font-medium text-primary">From {cfg.valid_from}</span>
             {cfg.id !== earliest ? (
               <Button variant="ghost" className="text-xs text-red-500"
@@ -60,7 +60,7 @@ export default function TaxConfigSettings() {
               <span className="text-xs text-faint">earliest — read-only</span>
             )}
           </div>
-          <div className="grid grid-cols-2 gap-1 text-xs text-secondary">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-secondary">
             <span>INPS rate: {(cfg.inps_rate * 100).toFixed(2)}%</span>
             <span>Band 1: {(cfg.irpef_band1_rate * 100).toFixed(0)}% up to €{fmt(cfg.irpef_band1_limit)}</span>
             <span>Band 2: {(cfg.irpef_band2_rate * 100).toFixed(0)}% up to €{fmt(cfg.irpef_band2_limit)}</span>
@@ -70,7 +70,7 @@ export default function TaxConfigSettings() {
           </div>
           <details className="mt-2">
             <summary className="text-xs text-faint cursor-pointer">Employment deduction details</summary>
-            <div className="grid grid-cols-2 gap-1 text-xs text-muted mt-1">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted mt-2">
               <span>Band 1 limit: €{fmt(cfg.employment_deduction_band1_limit)}</span>
               <span>Band 1 amount: €{fmt(cfg.employment_deduction_band1_amount)}</span>
               <span>Band 2 upper: €{fmt(cfg.employment_deduction_band2_limit)}</span>

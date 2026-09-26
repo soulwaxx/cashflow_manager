@@ -61,17 +61,17 @@ export default function CategoriesSettings() {
       </div>
       <ul className="space-y-1">
         {categories.map((c) => (
-          <li key={c.id} className="bg-surface border border-line rounded p-3 flex items-center justify-between text-sm text-primary">
-            <div className="flex items-center gap-2">
+          <li key={c.id} className="bg-surface border border-line rounded-xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm text-primary">
+            <div className="flex flex-wrap items-center gap-2 break-words">
               <span>{c.type}</span>
               <span className="text-faint">/</span>
               <span>{c.sub_type}</span>
               {!c.is_active && <Badge color="gray">Inactive</Badge>}
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button variant="ghost" className="text-xs" onClick={() => { setEditCat(c); resetEdit({ type: c.type, sub_type: c.sub_type }); }}>Rename</Button>
               {c.is_active ? (
-                <Button variant="ghost" className="text-xs text-red-500" onClick={() => deactivate(c.id)}>Deactivate</Button>
+                <Button variant="ghost" className="text-xs text-red-500" onClick={() => window.confirm(`Deactivate ${c.type}/${c.sub_type}? Existing transactions will remain.`) && deactivate(c.id)}>Deactivate</Button>
               ) : (
                 <Button variant="ghost" className="text-xs" onClick={() => reactivate(c.id)}>Reactivate</Button>
               )}

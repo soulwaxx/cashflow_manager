@@ -204,10 +204,9 @@ def test_resubmit_onboarding_preserves_existing_transactions(client, db):
     assert db.query(Transfer).filter_by(user_id=user.id).count() == 0
 
 
-def test_resubmit_onboarding_preserves_assets_forecasts_and_user_tax_config(client, db):
+def test_resubmit_onboarding_preserves_assets_and_user_tax_config(client, db):
     """A repeat submission must leave all existing financial rows intact."""
     from app.models.asset import Asset
-    from app.models.forecast import Forecast, ForecastLine, ForecastAdjustment
     from app.models.tax import TaxConfig
     from app.models.user import User
 
@@ -226,34 +225,16 @@ def test_resubmit_onboarding_preserves_assets_forecasts_and_user_tax_config(clie
         asset_name="Manual",
         manual_override=123.0,
     ))
-    forecast = Forecast(user_id=user.id, name="Old plan", base_year=2026, projection_years=1)
-    db.add(forecast)
-    db.flush()
-    line = ForecastLine(forecast_id=forecast.id, user_id=user.id, detail="Old line", base_amount=10.0)
-    db.add(line)
-    db.flush()
-    db.add(ForecastAdjustment(
-        forecast_line_id=line.id,
-        user_id=user.id,
-        valid_from="2027-01-01",
-        new_amount=20.0,
-    ))
     db.add(TaxConfig(user_id=user.id, valid_from="2027-01-01", inps_rate=0.05))
     db.commit()
 
     assert db.query(Asset).filter_by(user_id=user.id).count() == 1
-    assert db.query(Forecast).filter_by(user_id=user.id).count() == 1
-    assert db.query(ForecastLine).filter_by(user_id=user.id).count() == 1
-    assert db.query(ForecastAdjustment).filter_by(user_id=user.id).count() == 1
     assert db.query(TaxConfig).filter_by(user_id=user.id).count() == 1
 
     assert client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD).status_code == 409
     db.expire_all()
 
     assert db.query(Asset).filter_by(user_id=user.id).count() == 1
-    assert db.query(Forecast).filter_by(user_id=user.id).count() == 1
-    assert db.query(ForecastLine).filter_by(user_id=user.id).count() == 1
-    assert db.query(ForecastAdjustment).filter_by(user_id=user.id).count() == 1
     assert db.query(TaxConfig).filter_by(user_id=user.id).count() == 1
 
 

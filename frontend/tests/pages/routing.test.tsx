@@ -55,7 +55,7 @@ test('mobile navigation keeps primary destinations visible and exposes other rou
   await user.click(screen.getByRole('button', { name: 'More' }));
   expect(screen.getByRole('dialog', { name: 'More navigation' })).toBeInTheDocument();
   const drawerNavs = screen.getAllByRole('navigation', { name: 'Main navigation' });
-  expect(drawerNavs[drawerNavs.length - 1]).toHaveTextContent('Forecasting');
+  expect(drawerNavs[drawerNavs.length - 1]).not.toHaveTextContent('Forecasting');
   const transferLinks = screen.getAllByRole('link', { name: 'Transfers' });
   await user.click(transferLinks[transferLinks.length - 1]);
   await waitFor(() => expect(window.location.pathname).toBe('/transfers'));

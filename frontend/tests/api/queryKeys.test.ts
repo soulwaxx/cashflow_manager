@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
-import { invalidateAssetOverride, invalidateFor, invalidateForecast, queryKeys } from '../../src/api/queryKeys';
+import { invalidateAssetOverride, invalidateFor, queryKeys } from '../../src/api/queryKeys';
 
 const tracked = {
   auth: queryKeys.auth.me,
@@ -17,10 +17,6 @@ const tracked = {
   transferAnalytics: queryKeys.analytics.transferRows('2026-01', '2026-12'),
   categories: queryKeys.categories.list('all'),
   accounts: queryKeys.accounts.all,
-  forecasts: queryKeys.forecasts.all,
-  forecastDetail: queryKeys.forecasts.detail('a'),
-  forecastProjection: queryKeys.forecasts.projection('a'),
-  otherForecast: queryKeys.forecasts.detail('b'),
 };
 
 type Family = keyof typeof tracked;
@@ -57,17 +53,5 @@ describe('mutation cache dependencies', () => {
     const qc = cache();
     invalidateAssetOverride(qc, 2026);
     assertInvalidated(qc, ['assets']);
-  });
-
-  it('forecast line and adjustment mutations refresh only their own detail and projection', () => {
-    const qc = cache();
-    invalidateForecast(qc, 'a');
-    assertInvalidated(qc, ['forecastDetail', 'forecastProjection']);
-  });
-
-  it('forecast metadata mutations also refresh the forecast list', () => {
-    const qc = cache();
-    invalidateForecast(qc, 'a', true);
-    assertInvalidated(qc, ['forecasts', 'forecastDetail', 'forecastProjection']);
   });
 });

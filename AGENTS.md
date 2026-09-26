@@ -2,7 +2,7 @@
 
 ## Project overview
 
-CashFlow Manager is a self-hosted, multi-user personal-finance web app. The backend is FastAPI + SQLAlchemy + SQLite; the frontend is React 19 + strict TypeScript. Production packages the pre-built SPA, Nginx, Uvicorn, Alembic, and SQLite access in one container. Financial behavior is coupled across transactions, billing months, recurrence, transfers, bank balances, assets, salary/tax, and forecasts, so changes to one domain must be checked in its downstream summaries and UI.
+CashFlow Manager is a self-hosted, multi-user personal-finance web app. The backend is FastAPI + SQLAlchemy + SQLite; the frontend is React 19 + strict TypeScript. Production packages the pre-built SPA, Nginx, Uvicorn, Alembic, and SQLite access in one container. Financial behavior is coupled across transactions, billing months, recurrence, transfers, bank balances, assets, and salary/tax, so changes to one domain must be checked in its downstream summaries and UI.
 
 ## System design and data flow
 
@@ -20,7 +20,7 @@ FastAPI lifespan is the sole automatic migration owner. `start.sh` only launches
 
 - `backend/app/routers/`: transport, dependency injection, ownership checks, status codes, and small endpoint-specific request models. Keep multi-step financial rules in services when they are reused or independently testable.
 - `backend/app/schemas/`: shared and domain request/response models. Add cross-field validation here before invalid values reach financial services; router-local models are acceptable for small endpoint-only contracts.
-- `backend/app/services/`: billing, recurrence, bank balance, summaries, analytics, assets, salary/tax, forecasts, auth/OIDC, and seed logic.
+- `backend/app/services/`: billing, recurrence, bank balance, summaries, analytics, assets, salary/tax, auth/OIDC, and seed logic.
 - `backend/app/models/`: ORM schema. Import every new model in `models/__init__.py` so tests and Alembic register it.
 - `backend/alembic/versions/`: ordered schema/data migrations. Model changes require a reviewed migration; do not use `Base.metadata.create_all()` as the production migration path.
 - `backend/tests/`: pytest unit and FastAPI integration tests. Shared fixtures use in-memory SQLite with foreign keys enabled.
@@ -134,7 +134,7 @@ Before completion, run focused tests for the changed domain plus the full affect
 - Recurring edit/delete supports `single`, `future`, and `all`. Preserve root promotion and self-FK behavior when changing cascades.
 - Use stable IDs for relationships. Name fields on transfers/settings include legacy account identity and are fragile under rename.
 - SQLAlchemy `Numeric` values cross JSON as numbers. Use `Decimal` inside cumulative money calculations; avoid introducing additional float accumulation.
-- React Query keys are domain state. Mutations that affect derived views must invalidate all affected keys (for example transactions/transfers can affect summary, analytics, assets, and forecasts).
+- React Query keys are domain state. Mutations that affect derived views must invalidate all affected keys (for example transactions/transfers can affect summary, analytics, and assets).
 - Follow existing naming: Python modules/functions `snake_case`, React components/types `PascalCase`, hooks `useX`, domain API exports `xApi`.
 - PR titles must satisfy the Conventional Commit expression in `.github/workflows/ci.yml`; semantic-release consumes the squash title.
 

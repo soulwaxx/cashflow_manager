@@ -43,9 +43,9 @@ export default function AccountSettings() {
   });
 
   return (
-    <div className="space-y-4 max-w-sm">
+    <div className="space-y-4 max-w-lg min-w-0">
       <div className="bg-surface border border-line rounded-lg p-4 text-sm space-y-2">
-        <div><span className="text-muted">Email: </span><span className="font-medium text-primary">{user?.email}</span></div>
+        <div className="break-all"><span className="text-muted">Email: </span><span className="font-medium text-primary">{user?.email}</span></div>
         <div><span className="text-muted">Name: </span><span className="font-medium text-primary">{user?.name}</span></div>
         <div className="flex gap-2 text-xs text-faint">
           {user?.has_password && <span>Password auth</span>}
@@ -123,7 +123,7 @@ export default function AccountSettings() {
         <div className="flex flex-col gap-4">
           <div className="text-sm text-secondary bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3 space-y-1">
             <p className="font-semibold text-red-700 dark:text-red-400">This action is irreversible.</p>
-            <p>All your data will be permanently deleted: transactions, transfers, salary configs, assets, forecasts, and your account.</p>
+            <p>All your data will be permanently deleted: transactions, transfers, salary configs, assets, and your account.</p>
           </div>
           {requiresDeletePassword ? (
             <Input
