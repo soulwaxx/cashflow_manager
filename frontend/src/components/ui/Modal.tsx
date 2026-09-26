@@ -5,9 +5,10 @@ interface Props {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  fullScreenMobile?: boolean;
 }
 
-export default function Modal({ open, onClose, title, children }: Props) {
+export default function Modal({ open, onClose, title, children, fullScreenMobile = false }: Props) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -74,7 +75,7 @@ export default function Modal({ open, onClose, title, children }: Props) {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="bg-surface rounded-t-2xl sm:rounded-xl shadow-xl p-6 w-full sm:max-w-lg max-h-[90vh] overflow-y-auto"
+        className={`bg-surface shadow-xl p-5 sm:p-6 w-full ${fullScreenMobile ? 'h-full max-h-full rounded-none sm:h-auto sm:max-h-[90vh] sm:rounded-xl' : 'max-h-[90vh] rounded-t-2xl sm:rounded-xl'} sm:max-w-lg overflow-y-auto`}
       >
         <div className="flex justify-between items-center mb-4">
           <h2 id={titleId} className="text-lg font-semibold text-primary">{title}</h2>

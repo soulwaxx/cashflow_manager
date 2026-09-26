@@ -14,11 +14,12 @@ import type { Transaction } from '../../types/api';
 interface Props {
   dateMonth?: string;
   billingMonth?: string;
+  initialAddOpen?: boolean;
 }
 
-export default function TransactionList({ dateMonth, billingMonth }: Props) {
+export default function TransactionList({ dateMonth, billingMonth, initialAddOpen = false }: Props) {
   const qc = useQueryClient();
-  const [addOpen, setAddOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(initialAddOpen);
   const [editTx, setEditTx] = useState<Transaction | null>(null);
   const [deleteTx, setDeleteTx] = useState<Transaction | null>(null);
 
@@ -68,11 +69,11 @@ export default function TransactionList({ dateMonth, billingMonth }: Props) {
         ))}
       </ul>
 
-      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add transaction">
+      <Modal open={addOpen} onClose={() => setAddOpen(false)} title="Add transaction" fullScreenMobile>
         <TransactionForm onSuccess={() => setAddOpen(false)} />
       </Modal>
 
-      <Modal open={!!editTx} onClose={() => setEditTx(null)} title="Edit transaction">
+      <Modal open={!!editTx} onClose={() => setEditTx(null)} title="Edit transaction" fullScreenMobile>
         {editTx && (
           <TransactionForm initial={editTx} onSuccess={() => setEditTx(null)} />
         )}

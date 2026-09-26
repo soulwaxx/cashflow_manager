@@ -3,31 +3,53 @@
 @variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-primary:     rgb(17 24 39);
-  --color-secondary:   rgb(75 85 99);
-  --color-muted:       rgb(107 114 128);
-  --color-faint:       rgb(156 163 175);
-  --color-canvas:      rgb(249 250 251);
+  --color-primary:     rgb(24 32 48);
+  --color-secondary:   rgb(71 82 101);
+  --color-muted:       rgb(101 111 127);
+  --color-faint:       rgb(117 127 143);
+  --color-canvas:      rgb(248 247 244);
   --color-surface:     rgb(255 255 255);
   --color-elevated:    rgb(255 255 255);
-  --color-subtle:      rgb(249 250 251);
-  --color-muted-bg:    rgb(243 244 246);
-  --color-line:        rgb(229 231 235);
-  --color-line-strong: rgb(209 213 219);
+  --color-subtle:      rgb(250 249 247);
+  --color-muted-bg:    rgb(241 240 237);
+  --color-line:        rgb(226 225 220);
+  --color-line-strong: rgb(195 196 193);
+  --color-chart-line: rgb(36 79 134);
 }
 
 @layer base {
   .dark {
-    --color-primary:     rgb(243 244 246);
-    --color-secondary:   rgb(156 163 175);
-    --color-muted:       rgb(156 163 175);
-    --color-faint:       rgb(107 114 128);
-    --color-canvas:      rgb(3 7 18);
-    --color-surface:     rgb(17 24 39);
-    --color-elevated:    rgb(31 41 55);
-    --color-subtle:      rgb(31 41 55);
-    --color-muted-bg:    rgb(31 41 55);
-    --color-line:        rgb(55 65 81);
-    --color-line-strong: rgb(75 85 99);
+    --color-primary:     rgb(240 243 248);
+    --color-secondary:   rgb(188 197 211);
+    --color-muted:       rgb(160 171 188);
+    --color-faint:       rgb(145 157 175);
+    --color-canvas:      rgb(15 21 32);
+    --color-surface:     rgb(24 32 45);
+    --color-elevated:    rgb(32 42 57);
+    --color-subtle:      rgb(29 38 52);
+    --color-muted-bg:    rgb(39 50 66);
+    --color-line:        rgb(53 65 82);
+    --color-line-strong: rgb(77 91 110);
+    --color-chart-line: rgb(147 197 253);
+  }
+
+  :root {
+    color-scheme: light;
+  }
+  .dark {
+    color-scheme: dark;
+  }
+
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      scroll-behavior: auto !important;
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
   }
 }

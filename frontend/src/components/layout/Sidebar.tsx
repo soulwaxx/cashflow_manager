@@ -3,12 +3,14 @@ import { useAuth } from '../../hooks/useAuth';
 import { useTheme } from '../../hooks/useTheme';
 import { Button } from '../ui/Button';
 
-const links = [
+const primaryLinks = [
   { to: '/', label: 'Dashboard' },
-  { to: '/summary', label: 'Summary' },
   { to: '/transactions', label: 'Transactions' },
-  { to: '/transfers', label: 'Transfers' },
+  { to: '/summary', label: 'Summary' },
   { to: '/assets', label: 'Assets' },
+];
+const otherLinks = [
+  { to: '/transfers', label: 'Transfers' },
   { to: '/salary', label: 'Salary' },
   { to: '/analytics', label: 'Analytics' },
   { to: '/forecasting', label: 'Forecasting' },
@@ -22,46 +24,33 @@ interface SidebarProps {
 export default function Sidebar({ onClose }: SidebarProps = {}) {
   const { logout } = useAuth();
   const { dark, toggle } = useTheme();
+  const linkClass = ({ isActive }: { isActive: boolean }) =>
+    `block min-h-11 px-4 py-3 text-sm rounded-lg mx-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700 ${isActive ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 font-semibold' : 'text-secondary hover:bg-muted-bg'}`;
+  const links = (items: typeof primaryLinks) => items.map((link) => (
+    <NavLink key={link.to} to={link.to} end={link.to === '/'} onClick={onClose} className={linkClass}>
+      {link.label}
+    </NavLink>
+  ));
+
   return (
-    <nav className="w-56 bg-surface border-r border-line flex flex-col py-4 gap-1 h-full">
-      <div className="px-4 pb-4 flex items-center justify-between">
-        <span className="font-bold text-lg text-blue-700 dark:text-blue-400">CashFlow</span>
+    <nav aria-label="Main navigation" className="w-60 bg-surface border-r border-line flex flex-col py-4 gap-1 min-h-full">
+      <div className="px-4 pb-5 flex items-center justify-between">
+        <span className="font-bold text-lg text-blue-900 dark:text-blue-300">CashFlow</span>
         {onClose && (
-          <button
-            onClick={onClose}
-            aria-label="Close menu"
-            className="p-1 rounded text-secondary hover:bg-muted-bg md:hidden"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M2 2l12 12M14 2L2 14" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-            </svg>
+          <button onClick={onClose} aria-label="Close menu" className="p-2 rounded text-secondary hover:bg-muted-bg md:hidden min-h-11 min-w-11">
+            <span aria-hidden="true">×</span>
           </button>
         )}
       </div>
-      {links.map((l) => (
-        <NavLink
-          key={l.to}
-          to={l.to}
-          end={l.to === '/'}
-          onClick={onClose}
-          className={({ isActive }) =>
-            `px-4 py-2 text-sm rounded mx-2 ${isActive ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-medium' : 'text-secondary hover:bg-muted-bg'}`
-          }
-        >
-          {l.label}
-        </NavLink>
-      ))}
-      <div className="mt-auto px-4 flex flex-col gap-2">
-        <button
-          onClick={toggle}
-          aria-label="Toggle dark mode"
-          className="w-full text-left px-3 py-2 text-sm rounded text-secondary hover:bg-muted-bg transition-colors"
-        >
-          {dark ? '☀ Light mode' : '🌙 Dark mode'}
+      <p className="px-4 mx-2 mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Overview</p>
+      {links(primaryLinks)}
+      <p className="px-4 mx-2 mt-5 mb-1 text-xs font-semibold uppercase tracking-wide text-muted">Manage</p>
+      {links(otherLinks)}
+      <div className="mt-auto px-4 flex flex-col gap-2 pt-4">
+        <button onClick={toggle} aria-label="Toggle dark mode" className="w-full text-left px-3 py-3 min-h-11 text-sm rounded-lg text-secondary hover:bg-muted-bg transition-colors">
+          {dark ? '☀ Light mode' : '◐ Dark mode'}
         </button>
-        <Button variant="ghost" className="w-full text-left" onClick={logout}>
-          Sign out
-        </Button>
+        <Button variant="ghost" className="w-full text-left" onClick={logout}>Sign out</Button>
       </div>
     </nav>
   );

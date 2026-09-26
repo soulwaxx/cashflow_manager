@@ -16,7 +16,7 @@ export default function OutcomesByMethod({ summary, isLoading }: Props) {
           {methods.map(([method, amount]) => (
             <li key={method} className="flex justify-between text-sm">
               <span className="text-primary">{method}</span>
-              <span className={`font-medium ${amount < 0 ? 'text-green-600' : 'text-red-500'}`}>
+              <span className={`font-medium ${amount < 0 ? 'text-green-600' : 'text-red-700 dark:text-red-300'}`}>
                 {amount < 0 ? '+' : '-'}€{fmt(Math.abs(amount))}
               </span>
             </li>

@@ -1,6 +1,24 @@
 import { render, screen } from '@testing-library/react';
 import OutcomesByMethod from '../../src/components/dashboard/OutcomesByMethod';
 
+test('OutcomesByMethod gives outgoing amount text readable light and dark red colors', () => {
+  render(
+    <OutcomesByMethod
+      isLoading={false}
+      summary={{
+        year: 2026,
+        month: 1,
+        incomes: 0,
+        outcomes_by_method: { 'Credit card': 25 },
+        transfers_out_bank: 0,
+        transfers_in_bank: 0,
+        bank_balance: 4975,
+      }}
+    />,
+  );
+  expect(screen.getByText('-€25,00')).toHaveClass('text-red-700', 'dark:text-red-300');
+});
+
 test('OutcomesByMethod displays a refund as a positive net amount', () => {
   render(
     <OutcomesByMethod
@@ -19,4 +37,5 @@ test('OutcomesByMethod displays a refund as a positive net amount', () => {
 
   expect(screen.getByText('Net purchases and card payments')).toBeInTheDocument();
   expect(screen.getByText('+€25,00')).toBeInTheDocument();
+  expect(screen.getByText('+€25,00')).toHaveClass('text-green-600');
 });

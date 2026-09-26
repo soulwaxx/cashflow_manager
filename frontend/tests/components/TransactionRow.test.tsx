@@ -1,4 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import TransactionRow from '../../src/components/transactions/TransactionRow';
 import type { PaymentMethod, Transaction } from '../../src/types/api';
 
@@ -43,7 +45,7 @@ test.each([
   transactionDirection,
   expectedBadge,
 ) => {
-  render(
+  const { container } = render(
     <TransactionRow
       tx={{ ...transaction, transaction_direction: transactionDirection }}
       method={paymentMethod(type)}
@@ -53,6 +55,32 @@ test.each([
   );
 
   expect(screen.getByText(expectedBadge)).toBeInTheDocument();
+  const desktopActions = container.querySelector('.hidden.sm\\:flex');
+  expect(desktopActions).toBeInTheDocument();
+  expect(within(desktopActions as HTMLElement).getByRole('button', { name: 'Edit Transaction' })).toBeInTheDocument();
+  expect(within(desktopActions as HTMLElement).getByRole('button', { name: 'Delete Transaction' })).toBeInTheDocument();
+});
+
+test('mobile edit and delete actions are disclosed accessibly and preserve callbacks', async () => {
+  const user = userEvent.setup();
+  const onEdit = vi.fn();
+  const onDelete = vi.fn();
+  const { container } = render(
+    <TransactionRow tx={transaction} method={paymentMethod('bank')} onEdit={onEdit} onDelete={onDelete} />,
+  );
+  const details = screen.getByText('Details').closest('details')!;
+  expect(within(details).getByText('Details')).toHaveClass('min-h-11', 'min-w-[5.5rem]');
+  expect(details).not.toHaveAttribute('open');
+  await user.click(within(details).getByText('Details'));
+  await user.click(within(details).getByRole('button', { name: 'Edit Transaction' }));
+  await user.click(within(details).getByRole('button', { name: 'Delete Transaction' }));
+  expect(onEdit).toHaveBeenCalledOnce();
+  expect(onDelete).toHaveBeenCalledOnce();
+
+  const desktopActions = container.querySelector('.hidden.sm\\:flex');
+  expect(desktopActions).toBeInTheDocument();
+  expect(within(desktopActions as HTMLElement).getByRole('button', { name: 'Edit Transaction' })).toBeInTheDocument();
+  expect(within(desktopActions as HTMLElement).getByRole('button', { name: 'Delete Transaction' })).toBeInTheDocument();
 });
 
 test.each([

@@ -31,6 +31,17 @@ export const handlers = [
       bank_balance: 0,
     });
   }),
+  http.get('/api/v1/summary/:year', ({ params }) =>
+    HttpResponse.json(Array.from({ length: 12 }, (_, index) => ({
+      year: Number(params.year),
+      month: index + 1,
+      incomes: 0,
+      outcomes_by_method: {},
+      transfers_out_bank: 0,
+      transfers_in_bank: 0,
+      bank_balance: 0,
+    })))
+  ),
   http.get('/api/v1/assets/:year', () =>
     HttpResponse.json([])
   ),
