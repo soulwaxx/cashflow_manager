@@ -73,6 +73,19 @@ test('TransactionsPage opens add form when button clicked', async () => {
   expect(screen.getByRole('dialog')).toBeInTheDocument();
 });
 
+test('Dashboard shortcut query opens the existing add form', async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <MemoryRouter initialEntries={['/transactions?add=1']}>
+        <AuthProvider><TransactionsPage /></AuthProvider>
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  expect(await screen.findByRole('dialog', { name: /add transaction/i })).toBeInTheDocument();
+  expect(screen.getByLabelText(/payment method/i)).toBeInTheDocument();
+});
+
 test('TransactionsPage renders transaction list with amounts and details', async () => {
   render(<TransactionsPage />, { wrapper });
   await waitFor(() => expect(screen.getByText('Grocery run')).toBeInTheDocument());
@@ -107,7 +120,8 @@ test('TransactionsPage delete button opens cascade modal with recurring options 
   // Salary transaction is recurring (recurrence_months: 12)
   // It appears second in the list; find all Delete buttons and click the one for Salary
   const salaryRow = screen.getByText('Salary').closest('li')!;
-  const deleteBtn = within(salaryRow).getByRole('button', { name: /delete/i });
+  const desktopActions = salaryRow.querySelector<HTMLElement>('.hidden.sm\\:flex')!;
+  const deleteBtn = within(desktopActions).getByRole('button', { name: /delete/i });
   await user.click(deleteBtn);
 
   expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -116,11 +130,13 @@ test('TransactionsPage delete button opens cascade modal with recurring options 
   expect(screen.getByRole('button', { name: /this one only/i })).toBeInTheDocument();
 });
 
-test('TransactionsPage shows By date and By billing month toggle buttons', async () => {
+test('TransactionsPage date controls are labeled and have 44px targets', async () => {
   render(<TransactionsPage />, { wrapper });
   await waitFor(() => expect(screen.getByText('Grocery run')).toBeInTheDocument());
-  expect(screen.getByRole('button', { name: /by date/i })).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: /by billing month/i })).toBeInTheDocument();
+  expect(screen.getByLabelText('Transaction year')).toHaveClass('min-h-11');
+  expect(screen.getByLabelText('Transaction month')).toHaveClass('min-h-11');
+  expect(screen.getByRole('button', { name: /by date/i })).toHaveClass('min-h-11');
+  expect(screen.getByRole('button', { name: /by billing month/i })).toHaveClass('min-h-11');
 });
 
 test('TransactionsPage defaults to billing mode when billing_month URL param is present', async () => {
@@ -185,7 +201,8 @@ test('Transaction edit form only exposes backend-supported fields', async () => 
   await waitFor(() => expect(screen.getByText('Salary')).toBeInTheDocument());
 
   const salaryRow = screen.getByText('Salary').closest('li')!;
-  await user.click(within(salaryRow).getByRole('button', { name: /edit/i }));
+  const desktopActions = salaryRow.querySelector<HTMLElement>('.hidden.sm\\:flex')!;
+  await user.click(within(desktopActions).getByRole('button', { name: /edit/i }));
 
   await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
   expect(screen.queryByLabelText(/payment method/i)).not.toBeInTheDocument();
@@ -224,7 +241,8 @@ test('Transaction edit form sends null when notes are cleared', async () => {
   await waitFor(() => expect(screen.getByText('Grocery run')).toBeInTheDocument());
 
   const row = screen.getByText('Grocery run').closest('li')!;
-  await user.click(within(row).getByRole('button', { name: /edit/i }));
+  const desktopActions = row.querySelector<HTMLElement>('.hidden.sm\\:flex')!;
+  await user.click(within(desktopActions).getByRole('button', { name: /edit/i }));
 
   const notesInput = screen.getByLabelText(/notes/i);
   await user.clear(notesInput);

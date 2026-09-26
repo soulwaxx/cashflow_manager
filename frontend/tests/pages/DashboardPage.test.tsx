@@ -24,6 +24,9 @@ beforeEach(() => {
   const year = new Date().getFullYear();
   const month = new Date().getMonth() + 1;
   server.use(
+    http.get(`/api/v1/summary/${year}`, () => HttpResponse.json([
+      { year, month, incomes: 3000, outcomes_by_method: {}, transfers_out_bank: 0, transfers_in_bank: 0, bank_balance: 4500 },
+    ])),
     http.get(`/api/v1/summary/${year}/${month}`, () =>
       HttpResponse.json({
         year, month,
@@ -41,6 +44,13 @@ beforeEach(() => {
       ]);
     })
   );
+});
+
+test('Dashboard month controls have accessible names and 44px targets', async () => {
+  render(<DashboardPage />, { wrapper });
+  for (const name of ['Previous month', 'Next month']) {
+    expect(screen.getByRole('button', { name })).toHaveClass('min-h-11', 'min-w-11');
+  }
 });
 
 test('DashboardPage renders without crashing', async () => {
@@ -61,11 +71,19 @@ test('DashboardPage shows current month income and outcomes', async () => {
 test('DashboardPage shows bank balance for current month', async () => {
   render(<DashboardPage />, { wrapper });
   await waitFor(() => expect(screen.getByText(/4\.500/)).toBeInTheDocument());
+  expect(screen.getByText('-€200,00')).toHaveClass('text-red-700', 'dark:text-red-300');
 });
 
 test('DashboardPage shows total incomes', async () => {
   render(<DashboardPage />, { wrapper });
   await waitFor(() => expect(screen.getByText(/3\.000/)).toBeInTheDocument());
+});
+
+test('DashboardPage includes accessible bank balance trend and transaction shortcut', async () => {
+  render(<DashboardPage />, { wrapper });
+  expect(await screen.findByRole('img', { name: /monthly bank balance trend/i })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /add transaction/i })).toHaveAttribute('href', '/transactions?add=1');
+  expect(screen.getByRole('list', { name: /monthly bank balance values/i })).toHaveTextContent(/selected month/i);
 });
 
 test('DashboardPage requests assets as of the selected month', async () => {

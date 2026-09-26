@@ -26,6 +26,7 @@ export default function TransactionsPage() {
   const [searchParams] = useSearchParams();
   // billing_month URL param arrives as "YYYY-MM-DD" (from SummaryPage); extract "YYYY-MM"
   const billingMonthParam = searchParams.get('billing_month')?.slice(0, 7) ?? null;
+  const openAddOnLoad = searchParams.get('add') === '1';
 
   const now = new Date();
   const initDate = billingMonthParam ? new Date(billingMonthParam + '-01T00:00:00') : now;
@@ -43,18 +44,20 @@ export default function TransactionsPage() {
         <h1 className="text-xl font-bold text-primary">Transactions</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <select
+            aria-label="Transaction year"
             value={year}
             onChange={(e) => setYear(e.target.value)}
-            className="border border-line rounded px-2 py-1 text-sm bg-surface text-primary"
+            className="border border-line rounded px-2 py-1 min-h-11 text-sm bg-surface text-primary"
           >
             {YEAR_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
           <select
+            aria-label="Transaction month"
             value={month}
             onChange={(e) => setMonth(e.target.value)}
-            className="border border-line rounded px-2 py-1 text-sm bg-surface text-primary"
+            className="border border-line rounded px-2 py-1 min-h-11 text-sm bg-surface text-primary"
           >
             {MONTH_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
@@ -62,14 +65,14 @@ export default function TransactionsPage() {
           </select>
           <div className="flex rounded border border-line overflow-hidden text-sm">
             <button
-              className={`px-3 py-1 ${mode === 'date' ? 'bg-blue-600 text-white' : 'bg-surface text-secondary hover:bg-subtle'}`}
+              className={`px-3 py-2 min-h-11 ${mode === 'date' ? 'bg-blue-600 text-white' : 'bg-surface text-secondary hover:bg-subtle'}`}
               onClick={() => setMode('date')}
               title="Filter by the actual date the transaction occurred"
             >
               By date
             </button>
             <button
-              className={`px-3 py-1 ${mode === 'billing' ? 'bg-blue-600 text-white' : 'bg-surface text-secondary hover:bg-subtle'}`}
+              className={`px-3 py-2 min-h-11 ${mode === 'billing' ? 'bg-blue-600 text-white' : 'bg-surface text-secondary hover:bg-subtle'}`}
               onClick={() => setMode('billing')}
               title="Filter by billing month — credit card charges appear in the month they are billed"
             >
@@ -81,6 +84,7 @@ export default function TransactionsPage() {
       <TransactionList
         dateMonth={mode === 'date' ? yearMonth : undefined}
         billingMonth={mode === 'billing' ? yearMonth : undefined}
+        initialAddOpen={openAddOnLoad}
       />
     </div>
   );

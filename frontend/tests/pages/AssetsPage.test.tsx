@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -34,15 +34,29 @@ test('AssetsPage renders heading', async () => {
 
 test('AssetsPage shows asset names and values', async () => {
   render(<AssetsPage />, { wrapper });
-  await waitFor(() => expect(screen.getByText('EmergencyFund')).toBeInTheDocument());
-  expect(screen.getByText('AXA')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText('EmergencyFund').length).toBeGreaterThan(0));
+  expect(screen.getAllByText('AXA').length).toBeGreaterThan(0);
   // Computed amount for EmergencyFund: 8.000,00 (Italian locale) — may appear in multiple columns
   expect(screen.getAllByText(/8\.000/).length).toBeGreaterThan(0);
 });
 
+test('AssetsPage reveals asset details and names override action accessibly', async () => {
+  const user = userEvent.setup();
+  render(<AssetsPage />, { wrapper });
+  await screen.findAllByText('EmergencyFund');
+  const card = screen.getAllByRole('article').find((element) => element.textContent?.includes('EmergencyFund'));
+  expect(card).toBeInTheDocument();
+  const detailsSummary = within(card!).getByText('Value details');
+  expect(detailsSummary).toHaveClass('min-h-11', 'min-w-[8rem]');
+  await user.click(detailsSummary);
+  expect(within(card!).getByText('Computed')).toBeInTheDocument();
+  await user.click(within(card!).getByRole('button', { name: 'Override EmergencyFund' }));
+  expect(within(card!).getByRole('spinbutton', { name: /override amount for emergencyfund/i })).toBeInTheDocument();
+});
+
 test('AssetsPage shows override value when present', async () => {
   render(<AssetsPage />, { wrapper });
-  await waitFor(() => expect(screen.getByText('AXA')).toBeInTheDocument());
+  await waitFor(() => expect(screen.getAllByText('AXA').length).toBeGreaterThan(0));
   // AXA has manual_override: 3500, displayed as "3.500,00 (manual)"
   expect(screen.getAllByText(/3\.500/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/manual/i).length).toBeGreaterThan(0);
@@ -50,14 +64,15 @@ test('AssetsPage shows override value when present', async () => {
 
 test('AssetsPage lists assets with computed and override amounts', async () => {
   render(<AssetsPage />, { wrapper });
-  await waitFor(() => expect(screen.getByText('EmergencyFund')).toBeInTheDocument());
-  expect(screen.getByText('AXA')).toBeInTheDocument();
+  await waitFor(() => expect(screen.getAllByText('EmergencyFund').length).toBeGreaterThan(0));
+  expect(screen.getAllByText('AXA').length).toBeGreaterThan(0);
   expect(screen.getAllByText(/manual/i).length).toBeGreaterThan(0);
 });
 
-test('AssetsPage shows year selector', async () => {
+test('AssetsPage year and add-account controls are labeled with 44px targets', async () => {
   render(<AssetsPage />, { wrapper });
-  await waitFor(() => expect(screen.getByRole('spinbutton')).toBeInTheDocument());
+  expect(await screen.findByRole('spinbutton', { name: 'Assets year' })).toHaveClass('min-h-11');
+  expect(screen.getByRole('button', { name: /add account/i })).toHaveClass('min-h-11');
 });
 
 test('AssetsPage add account creates a stable account', async () => {

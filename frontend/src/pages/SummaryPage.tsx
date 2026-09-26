@@ -43,6 +43,7 @@ export default function SummaryPage() {
         <h1 className="text-xl font-bold text-primary">Monthly Summary</h1>
         <input
           type="number"
+          aria-label="Summary year"
           value={inputYear}
           onChange={(e) => {
             setInputYear(e.target.value);
@@ -52,7 +53,7 @@ export default function SummaryPage() {
               setMobileMonth(0);
             }
           }}
-          className="border border-line-strong rounded px-2 py-1 w-24 text-sm bg-elevated text-primary"
+          className="border border-line-strong rounded px-2 py-1 min-h-11 w-24 text-sm bg-elevated text-primary"
           min="2000"
           max="2100"
         />
@@ -68,17 +69,19 @@ export default function SummaryPage() {
           {/* Month navigator */}
           <div className="flex items-center justify-between bg-surface border border-line rounded-lg px-4 py-2">
             <button
+              aria-label="Previous month"
               onClick={() => setMobileMonth((m) => Math.max(0, m - 1))}
               disabled={mobileMonth === 0}
-              className="px-2 py-1 text-secondary disabled:opacity-30 hover:text-primary"
+              className="px-3 py-2 min-h-11 min-w-11 text-secondary disabled:opacity-30 hover:text-primary"
             >
               ‹
             </button>
             <span className="font-medium text-primary">{MONTHS[mobileMonth]} {year}</span>
             <button
+              aria-label="Next month"
               onClick={() => setMobileMonth((m) => Math.min(11, m + 1))}
               disabled={mobileMonth === 11}
-              className="px-2 py-1 text-secondary disabled:opacity-30 hover:text-primary"
+              className="px-3 py-2 min-h-11 min-w-11 text-secondary disabled:opacity-30 hover:text-primary"
             >
               ›
             </button>
@@ -86,14 +89,16 @@ export default function SummaryPage() {
           {/* Month data */}
           <div className="bg-surface border border-line rounded-lg divide-y divide-line">
             {rows.map((row) => (
-              <div
+              <button
+                type="button"
                 key={row.label}
-                className={`flex justify-between items-center px-4 py-2.5 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 ${row.highlight ? 'bg-blue-50 dark:bg-blue-900/20 font-semibold' : ''}`}
+                aria-label={`${row.label} for ${MONTHS[mobileMonth]} ${year}: ${row.values[mobileMonth] ?? 'no data'}. View filtered transactions`}
+                className={`w-full flex justify-between items-center px-4 py-3 min-h-12 text-sm text-left hover:bg-blue-50 dark:hover:bg-blue-900/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-700 ${row.highlight ? 'bg-blue-50 dark:bg-blue-900/20 font-semibold' : ''}`}
                 onClick={() => months[mobileMonth] && navigate(`/transactions?billing_month=${year}-${String(mobileMonth + 1).padStart(2, '0')}-01`)}
               >
                 <span className="text-secondary">{row.label}</span>
                 <span className="tabular-nums text-primary">{row.values[mobileMonth] ?? '—'}</span>
-              </div>
+              </button>
             ))}
           </div>
         </div>
@@ -127,12 +132,14 @@ export default function SummaryPage() {
                     const val = row.values[i];
                     const monthData = months[i];
                     return (
-                      <td
-                        key={i}
-                        className={`p-2 border border-line text-right tabular-nums cursor-pointer text-primary hover:bg-blue-50 dark:hover:bg-blue-900/20 ${i + 1 === currentMonth ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}
-                        onClick={() => monthData && navigate(`/transactions?billing_month=${year}-${String(i + 1).padStart(2, '0')}-01`)}
-                      >
-                        {val ?? '—'}
+                      <td key={i} className={`p-0 border border-line text-right tabular-nums text-primary ${i + 1 === currentMonth ? 'bg-blue-50/30 dark:bg-blue-900/10' : ''}`}>
+                        <button
+                          type="button"
+                          aria-label={`${row.label}, ${MONTHS[i]} ${year}: ${val ?? 'no data'}. View filtered transactions`}
+                          disabled={!monthData}
+                          className="w-full min-h-11 px-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-inset focus-visible:outline-blue-700 disabled:cursor-default"
+                          onClick={() => monthData && navigate(`/transactions?billing_month=${year}-${String(i + 1).padStart(2, '0')}-01`)}
+                        >{val ?? '—'}</button>
                       </td>
                     );
                   })}

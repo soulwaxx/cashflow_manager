@@ -34,9 +34,14 @@ test('SummaryPage shows 12 month columns', async () => {
   await waitFor(() => expect(screen.getAllByRole('columnheader')).toHaveLength(13)); // year + 12 months
 });
 
-test('SummaryPage shows year selector', async () => {
+test('Summary year and month controls are labeled with 44px targets', async () => {
   render(<SummaryPage />, { wrapper });
-  await waitFor(() => expect(screen.getByRole('spinbutton')).toBeInTheDocument());
+  const yearInput = await screen.findByRole('spinbutton', { name: 'Summary year' });
+  await screen.findByRole('button', { name: 'Next month' });
+  expect(yearInput).toHaveClass('min-h-11');
+  for (const name of ['Previous month', 'Next month']) {
+    expect(screen.getByRole('button', { name })).toHaveClass('min-h-11', 'min-w-11');
+  }
 });
 
 test('SummaryPage renders without crashing', async () => {

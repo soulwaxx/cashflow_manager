@@ -105,6 +105,8 @@ Tests use an in-memory SQLite database. `conftest.py` creates a fresh DB per tes
 
 ### Frontend
 
+The signed-in app uses a grouped desktop sidebar. On phones, Dashboard, Transactions, Summary, and Assets stay in the bottom tab bar; transfers, salary, analytics, forecasting, and settings are available from **More**. Dashboard's **Add transaction** shortcut opens the existing transaction form. Summary values link to transactions filtered by billing month.
+
 ```bash
 cd frontend
 npm test              # run once
