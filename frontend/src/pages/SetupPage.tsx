@@ -25,13 +25,14 @@ function WizardContent() {
   const { step } = useOnboarding();
   const Step = STEPS[step];
   return (
-    <div className="min-h-screen bg-gray-50 flex items-start justify-center pt-16 px-4">
-      <div className="bg-white rounded-lg shadow-sm border p-8 w-full max-w-lg">
-        <h1 className="text-xl font-bold mb-4 text-primary">Setup your account</h1>
+    <main className="min-h-dvh bg-canvas flex items-start justify-center px-4 py-6 sm:py-12">
+      <div className="bg-surface rounded-2xl shadow-sm border border-line p-5 sm:p-8 w-full max-w-2xl min-w-0 text-primary">
+        <p className="text-sm font-semibold tracking-wide text-blue-800 dark:text-blue-300 mb-2">CashFlow Manager</p>
+        <h1 className="text-2xl font-bold mb-4 text-primary">Setup your account</h1>
         <WizardProgress current={step} total={8} />
         <Step />
       </div>
-    </div>
+    </main>
   );
 }
 

@@ -3,17 +3,19 @@ import RegisterForm from '../components/auth/RegisterForm';
 
 export default function RegisterPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-canvas">
-      <div className="bg-surface rounded-lg shadow-sm border border-line p-8 w-full max-w-sm">
-        <h1 className="text-2xl font-bold mb-6 text-center text-primary">Create Account</h1>
+    <main className="min-h-dvh flex items-center justify-center bg-canvas px-4 py-8 sm:py-16">
+      <div className="bg-surface rounded-2xl shadow-sm border border-line p-5 sm:p-8 w-full max-w-md">
+        <p className="text-center text-sm font-semibold tracking-wide text-blue-800 dark:text-blue-300 mb-3">CashFlow Manager</p>
+        <h1 className="text-2xl font-bold mb-2 text-center text-primary">Create Account</h1>
+        <p className="text-sm text-muted text-center mb-6">Start tracking with a private account.</p>
         <RegisterForm />
         <p className="mt-4 text-center text-sm text-muted">
           Already have an account?{' '}
-          <Link to="/login" className="text-blue-600 hover:underline">
+          <Link to="/login" className="text-blue-700 dark:text-blue-300 underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">
             Sign in
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }

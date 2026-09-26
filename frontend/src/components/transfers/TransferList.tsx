@@ -59,7 +59,7 @@ export default function TransferList() {
 
   return (
     <>
-      <div className="flex justify-between items-center mb-3">
+      <div className="flex flex-wrap gap-3 justify-between items-center mb-4">
         <h2 className="font-semibold text-secondary">Transfers</h2>
         <Button onClick={() => setAddOpen(true)}>+ Add transfer</Button>
       </div>
@@ -68,32 +68,36 @@ export default function TransferList() {
           {deleteError}
         </p>
       )}
-      <ul className="bg-surface rounded-lg border border-line divide-y divide-line text-sm">
+      <ul className="bg-surface rounded-xl border border-line divide-y divide-line text-sm overflow-hidden">
         {transfers.length === 0 && <li className="p-4 text-faint">No transfers</li>}
         {transfers.map((tr) => (
-          <li key={tr.id} className="p-3 flex items-center gap-3">
-            <div className="flex-1">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-primary">{tr.detail}</span>
-                {tr.recurrence_months && <span title="Recurring" className="text-blue-400 text-xs">↻</span>}
+          <li key={tr.id} className="p-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-primary break-words">{tr.detail}</span>
+                {tr.recurrence_months && <span className="text-xs text-blue-700 dark:text-blue-300">Recurring</span>}
               </div>
-              <div className="text-muted text-xs mt-0.5">
-                {tr.date} · <span>{tr.from_account_name}</span> → <span>{tr.to_account_name}</span>
-              </div>
+              <p className="text-muted text-xs mt-1">{tr.date}</p>
+              <p className="text-secondary text-sm mt-1 break-words">
+                <span className="sr-only">From </span><span className="font-medium">{tr.from_account_name}</span> <span aria-hidden="true">→</span> <span className="sr-only">to </span><span className="font-medium">{tr.to_account_name}</span>
+              </p>
             </div>
-            <Badge color="blue">€{fmt(tr.amount)}</Badge>
-            <div className="flex gap-1">
-              <Button variant="ghost" className="text-xs px-2" onClick={() => setEditTr(tr)}>Edit</Button>
-              <Button
-                variant="ghost"
-                className="text-xs px-2 text-red-500"
-                onClick={() => {
-                  setDeleteError(null);
-                  setDeleteTr(tr);
-                }}
-              >
-                Delete
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2 sm:justify-end">
+              <Badge color="blue">€{fmt(tr.amount)}</Badge>
+              <div className="flex gap-1">
+                <Button variant="ghost" className="text-xs px-2" aria-label={`Edit ${tr.detail}`} onClick={() => setEditTr(tr)}>Edit</Button>
+                <Button
+                  variant="ghost"
+                  className="text-xs px-2 text-red-500"
+                  aria-label={`Delete ${tr.detail}`}
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteTr(tr);
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
             </div>
           </li>
         ))}

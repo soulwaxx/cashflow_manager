@@ -61,6 +61,10 @@ test('TransfersPage lists transfers with from/to accounts', async () => {
   await waitFor(() => expect(screen.getByText('Savings deposit')).toBeInTheDocument());
   expect(screen.getAllByText(/Checking/).length).toBeGreaterThan(0);
   expect(screen.getAllByText(/Savings/).length).toBeGreaterThan(0);
+  const transferRow = screen.getByText('Savings deposit').closest('li')!;
+  expect(within(transferRow).getByText('From')).toHaveClass('sr-only');
+  expect(within(transferRow).getByText('to')).toHaveClass('sr-only');
+  expect(transferRow).toHaveTextContent(/From Checking → to Savings/);
 });
 
 test('TransfersPage delete button opens modal', async () => {

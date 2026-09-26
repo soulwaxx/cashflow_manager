@@ -89,10 +89,11 @@ export default function StepSalaryConfig() {
       <Input label="Welfare annual (€)" type="number" step="1" {...register('welfare_annual')} />
 
       <div className="flex flex-col gap-1">
-        <label className="text-sm font-medium text-secondary">Salary months</label>
+        <label htmlFor="setup-salary-months" className="text-sm font-medium text-secondary">Salary months</label>
         <select
+          id="setup-salary-months"
           {...register('salary_months')}
-          className="border border-line-strong rounded px-3 py-2 text-sm bg-elevated text-primary"
+          className="min-h-11 border border-line-strong rounded-lg px-3 py-2 text-base sm:text-sm bg-elevated text-primary"
         >
           <option value="12">12 (standard)</option>
           <option value="13">13 (tredicesima)</option>
@@ -101,13 +102,13 @@ export default function StepSalaryConfig() {
       </div>
 
       {preview && (
-        <div className="bg-blue-50 rounded p-3 text-sm space-y-1">
-          <div className="font-medium text-blue-700">Estimated net: €{fmt(preview.net_monthly)}/mo</div>
-          <div className="text-gray-600">Social security: €{fmt(preview.social_security)} · Income tax: €{fmt(preview.income_tax_net)}</div>
+        <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3 text-sm space-y-1">
+          <div className="font-medium text-blue-800 dark:text-blue-300">Estimated net: €{fmt(preview.net_monthly)}/mo</div>
+          <div className="text-secondary">Social security: €{fmt(preview.social_security)} · Income tax: €{fmt(preview.income_tax_net)}</div>
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" type="button" onClick={() => setStep(6)}>Back</Button>
         <Button variant="ghost" type="button" onClick={() => setStep(8)}>Skip</Button>
         <Button type="submit">Next</Button>

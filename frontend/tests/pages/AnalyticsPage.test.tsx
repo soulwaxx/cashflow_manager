@@ -78,18 +78,29 @@ test('AnalyticsPage switching to cumulative view changes active button variant',
   expect(barBtn.className).not.toMatch(/bg-blue-600/);
 });
 
+test('AnalyticsPage exposes filter state and text chart data to keyboard users', async () => {
+  const user = userEvent.setup();
+  render(<AnalyticsPage />, { wrapper });
+  await screen.findByText('Chart data by month');
+  expect(screen.getByText(`${year}-01 · Personal/Food`).closest('li')).toHaveTextContent('€250,00');
+  const food = screen.getByRole('button', { name: 'Personal/Food' });
+  expect(food).toHaveAttribute('aria-pressed', 'false');
+  await user.click(food);
+  expect(food).toHaveAttribute('aria-pressed', 'true');
+  expect(screen.getByLabelText('Direction')).toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Cumulative' }));
+  expect(screen.getByText('Cumulative chart data by month')).toBeInTheDocument();
+  expect(screen.getByText(`${year}-02 · Personal/Food`).closest('li')).toHaveTextContent('€550,00');
+});
+
 test('AnalyticsPage initializes with current year range', async () => {
   render(<AnalyticsPage />, { wrapper });
 
   const expectedFrom = `${year}-01`;
   const expectedTo = `${year}-12`;
 
-  // AnalyticsFilters renders two <input type="month"> elements for "From" and "To".
-  // They are queried by their display value since the labels lack htmlFor associations.
   await waitFor(() => {
-    const monthInputs = screen.getAllByDisplayValue(new RegExp(`^${year}-`)) as HTMLInputElement[];
-    const values = monthInputs.map((el) => el.value);
-    expect(values).toContain(expectedFrom);
-    expect(values).toContain(expectedTo);
+    expect(screen.getByLabelText('From')).toHaveValue(expectedFrom);
+    expect(screen.getByLabelText('To')).toHaveValue(expectedTo);
   });
 });

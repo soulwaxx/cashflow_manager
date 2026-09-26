@@ -109,8 +109,6 @@ def test_migration_head_creates_expected_schema():
 
         # Reconciled ORM non-null constraints and indexes.
         expected_not_null = {
-            "forecast_adjustments": ("adjustment_type",),
-            "forecasts": ("created_at", "updated_at"),
             "transactions": ("created_at", "updated_at"),
             "transfers": ("created_at",),
             "user_settings": ("updated_at",),
@@ -122,6 +120,8 @@ def test_migration_head_creates_expected_schema():
                 assert columns[column_name]["nullable"] is False, (
                     f"{table_name}.{column_name} must be non-null"
                 )
+
+        assert not {"forecasts", "forecast_lines", "forecast_adjustments"} & set(inspector.get_table_names())
 
         user_indexes = {idx["name"]: idx for idx in inspector.get_indexes("users")}
         assert user_indexes["ix_users_email"]["unique"]
@@ -246,7 +246,7 @@ def test_migration_backfills_implicit_legacy_card_links_without_changing_bank_ba
                      'debit-1', 'category-1', 'debit', '2026-03-01')
             """)
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "017remove_orphans")
 
         with engine.connect() as connection:
             links = connection.exec_driver_sql("""
@@ -362,6 +362,21 @@ def test_migration_removes_orphaned_financial_rows_without_touching_owned_data()
         os.unlink(db_path)
 
 
+def test_migration_018_requires_backup_for_downgrade(tmp_path):
+    db_path = str(tmp_path / "retired-forecast.db")
+    cfg = _cfg(db_path)
+    command.upgrade(cfg, "head")
+
+    with pytest.raises(RuntimeError, match="pre-upgrade database backup"):
+        command.downgrade(cfg, "017remove_orphans")
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        assert not {"forecasts", "forecast_lines", "forecast_adjustments"} & set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
 def test_migration_014_reconciles_legacy_rows_without_losing_constraints_or_indexes():
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
@@ -416,18 +431,22 @@ def test_migration_014_reconciles_legacy_rows_without_losing_constraints_or_inde
                         'saving', 'Savings', '2026-01-01', NULL)
             """)
 
+        command.upgrade(cfg, "014reconcile_schema")
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("""
+                SELECT adjustment_type FROM forecast_adjustments WHERE id = 'adjustment-1'
+            """).scalar_one() == "fixed"
+        adjustment_checks = {
+            constraint["name"] for constraint in inspect(engine).get_check_constraints("forecast_adjustments")
+        }
+        assert "ck_adjustment_type" in adjustment_checks
+
         command.upgrade(cfg, "head")
 
         with engine.connect() as connection:
-            adjustment_type = connection.exec_driver_sql("""
-                SELECT adjustment_type FROM forecast_adjustments WHERE id = 'adjustment-1'
-            """).scalar_one()
-            assert adjustment_type == "fixed"
             for table_name, column_name, row_id in (
                 ("users", "created_at", "user-1"),
                 ("user_settings", "updated_at", "user-1"),
-                ("forecasts", "created_at", "forecast-1"),
-                ("forecasts", "updated_at", "forecast-1"),
                 ("transactions", "created_at", "transaction-1"),
                 ("transactions", "updated_at", "transaction-1"),
                 ("transfers", "created_at", "transfer-1"),
@@ -442,10 +461,7 @@ def test_migration_014_reconciles_legacy_rows_without_losing_constraints_or_inde
             assert connection.exec_driver_sql("SELECT COUNT(*) FROM transfers").scalar_one() == 1
 
         inspector = inspect(engine)
-        adjustment_checks = {
-            constraint["name"] for constraint in inspector.get_check_constraints("forecast_adjustments")
-        }
-        assert "ck_adjustment_type" in adjustment_checks
+        assert not {"forecasts", "forecast_lines", "forecast_adjustments"} & set(inspector.get_table_names())
         transaction_indexes = {idx["name"] for idx in inspector.get_indexes("transactions")}
         transfer_indexes = {idx["name"] for idx in inspector.get_indexes("transfers")}
         assert {"ix_transaction_user_date", "ix_transaction_user_billing_month"} <= transaction_indexes
@@ -579,7 +595,7 @@ def test_migration_015_downgrade_recreates_legacy_settings_for_reupgrade():
                         'saving', 'Nest', '2026-01-01')
             """)
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "017remove_orphans")
         with engine.connect() as connection:
             first_account_id = connection.exec_driver_sql("""
                 SELECT id FROM accounts
@@ -661,7 +677,7 @@ def test_migration_015_roundtrip_refreshes_renamed_account_history_per_owner_and
                     VALUES (?, ?, 2026, ?, ?, 200)
                 """, (asset_id, user_id, account_type, name))
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "017remove_orphans")
         with engine.begin() as connection:
             for user_id, account_type, name in (
                 ("user-1", "saving", "Alice renamed saving"),
@@ -789,7 +805,7 @@ def test_migration_015_roundtrip_restores_pension_identity_from_legacy_history()
                 VALUES ('asset-2', 'user-2', 2026, 'pension', 'Pension', 678.90)
             """)
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "017remove_orphans")
         with engine.connect() as connection:
             initial_account_id = connection.exec_driver_sql("""
                 SELECT id FROM accounts
@@ -891,7 +907,7 @@ def test_migration_003_roundtrip_preserves_user_id_index():
         db_path = f.name
     engine = create_engine(f"sqlite:///{db_path}")
     try:
-        command.upgrade(_cfg(db_path), "head")
+        command.upgrade(_cfg(db_path), "017remove_orphans")
         command.downgrade(_cfg(db_path), "002")
         command.upgrade(_cfg(db_path), "head")
 
@@ -902,5 +918,4 @@ def test_migration_003_roundtrip_preserves_user_id_index():
         )
     finally:
         engine.dispose()
-        command.downgrade(_cfg(db_path), "base")
         os.unlink(db_path)

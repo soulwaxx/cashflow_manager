@@ -289,8 +289,8 @@ def test_unauthenticated_transactions_returns_401():
         get_settings.cache_clear()
 
 
-def test_unauthenticated_forecasts_returns_401():
-    """GET /forecasts without a session cookie must return 401."""
+def test_retired_forecasts_endpoint_returns_404():
+    """The retired forecasting route must not be exposed."""
     import os
     from fastapi.testclient import TestClient
     from sqlalchemy import create_engine
@@ -323,7 +323,7 @@ def test_unauthenticated_forecasts_returns_401():
         with TestClient(app, raise_server_exceptions=True) as anon:
             anon.cookies.clear()
             r = anon.get("/api/v1/forecasts")
-            assert r.status_code == 401
+            assert r.status_code == 404
     finally:
         app.dependency_overrides.clear()
         Base.metadata.drop_all(bind=engine)

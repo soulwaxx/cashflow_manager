@@ -169,54 +169,6 @@ def test_category_delete_by_other_user_returns_404(client):
 
 
 # ---------------------------------------------------------------------------
-# Forecasts
-# ---------------------------------------------------------------------------
-
-def _alice_forecast(client):
-    """Set up Alice's data and return a forecast id owned by her."""
-    _register_and_onboard_alice(client)
-    r = client.post("/api/v1/forecasts", json={
-        "name": "Alice Plan", "base_year": 2026, "projection_years": 1,
-    })
-    assert r.status_code == 200
-    return r.json()["id"]
-
-
-def test_forecast_get_by_other_user_returns_404(client):
-    fc_id = _alice_forecast(client)
-    _switch_to_bob(client)
-    assert client.get(f"/api/v1/forecasts/{fc_id}").status_code == 404
-
-
-def test_forecast_put_by_other_user_returns_404(client):
-    fc_id = _alice_forecast(client)
-    _switch_to_bob(client)
-    r = client.put(f"/api/v1/forecasts/{fc_id}", json={"name": "Hacked"})
-    assert r.status_code == 404
-
-
-def test_forecast_delete_by_other_user_returns_404(client):
-    fc_id = _alice_forecast(client)
-    _switch_to_bob(client)
-    assert client.delete(f"/api/v1/forecasts/{fc_id}").status_code == 404
-
-
-def test_forecast_projection_by_other_user_returns_404(client):
-    fc_id = _alice_forecast(client)
-    _switch_to_bob(client)
-    assert client.get(f"/api/v1/forecasts/{fc_id}/projection").status_code == 404
-
-
-def test_forecast_add_line_by_other_user_returns_404(client):
-    fc_id = _alice_forecast(client)
-    _switch_to_bob(client)
-    r = client.post(f"/api/v1/forecasts/{fc_id}/lines", json={
-        "detail": "Hacked line", "base_amount": 100,
-    })
-    assert r.status_code == 404
-
-
-# ---------------------------------------------------------------------------
 # Assets
 # ---------------------------------------------------------------------------
 # Assets use (year, asset_type, asset_name) as the "key", not a UUID.

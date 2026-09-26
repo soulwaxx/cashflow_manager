@@ -14,7 +14,6 @@ from app.models import (  # noqa: F401 — ensure all models registered
     Asset,
     SalaryConfig,
     TaxConfig,
-    Forecast, ForecastLine, ForecastAdjustment,
 )
 
 

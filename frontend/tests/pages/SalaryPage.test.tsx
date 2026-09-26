@@ -58,6 +58,19 @@ test('SalaryPage shows salary config period', async () => {
   await waitFor(() => expect(screen.getByText('2026-01-01')).toBeInTheDocument());
 });
 
+test('Salary breakdown can be expanded and collapsed with the keyboard', async () => {
+  const user = userEvent.setup();
+  render(<SalaryPage />, { wrapper });
+  const toggle = await screen.findByRole('button', { name: /hide breakdown/i });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  toggle.focus();
+  await user.keyboard('{Enter}');
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('Breakdown')).not.toBeInTheDocument();
+  await user.keyboard('{Enter}');
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+});
+
 test('SalaryPage shows computed net monthly', async () => {
   render(<SalaryPage />, { wrapper });
   await waitFor(() => expect(screen.getByText(/2\.600/)).toBeInTheDocument()); // Italian locale: 2.600

@@ -13,7 +13,6 @@ const otherLinks = [
   { to: '/transfers', label: 'Transfers' },
   { to: '/salary', label: 'Salary' },
   { to: '/analytics', label: 'Analytics' },
-  { to: '/forecasting', label: 'Forecasting' },
   { to: '/settings', label: 'Settings' },
 ];
 

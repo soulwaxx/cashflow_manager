@@ -40,7 +40,7 @@ function BreakdownPanel({ config }: { config: SalaryConfig }) {
   const voluntaryPension = config.voluntary_contrib_rate * config.ral;
 
   const row = (label: string, val: number, negative = false, muted = false, indent = false) => (
-    <div key={label} className={`flex justify-between ${indent ? 'ml-3' : ''}`}>
+    <div key={label} className={`flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 ${indent ? 'ml-3' : ''}`}>
       <span className={muted ? 'text-faint text-xs' : 'text-secondary'}>{label}</span>
       <span className={`tabular-nums font-medium text-xs ${negative ? 'text-red-500' : muted ? 'text-faint' : 'text-primary'}`}>
         {negative ? '−' : ''}€{fmt(Math.abs(val))}
@@ -49,7 +49,7 @@ function BreakdownPanel({ config }: { config: SalaryConfig }) {
   );
 
   return (
-    <div className="bg-subtle rounded p-4 text-sm space-y-1 mt-3">
+    <div className="bg-subtle border border-line rounded-lg p-4 text-sm space-y-2 mt-4">
       <div className="font-medium text-secondary mb-2">Breakdown</div>
 
       {row('Gross annual', breakdown.gross_annual)}
@@ -185,7 +185,7 @@ export default function SalaryPage() {
     },
   });
 
-  const selectedConfig = configs.find((c) => c.id === selectedId) ?? configs[configs.length - 1];
+  const selectedConfig = selectedId === null ? configs[configs.length - 1] : configs.find((c) => c.id === selectedId);
 
   const periodForm = (reg: typeof register, submitHandler: typeof handleSubmit, isPending: boolean, onSubmit: (d: PeriodFields) => void, hideDate = false) => (
     <form onSubmit={submitHandler(onSubmit)} className="flex flex-col gap-3">
@@ -214,8 +214,8 @@ export default function SalaryPage() {
   );
 
   return (
-    <div className="max-w-2xl space-y-4">
-      <div className="flex items-center justify-between">
+    <div className="max-w-3xl space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-bold text-primary">Salary Config</h1>
         <Button onClick={() => setAddOpen(true)}>+ Add period</Button>
       </div>
@@ -227,15 +227,14 @@ export default function SalaryPage() {
           {configs.map((cfg) => (
             <div
               key={cfg.id}
-              className={`bg-surface border border-line rounded-lg p-4 cursor-pointer ${selectedConfig?.id === cfg.id ? 'ring-2 ring-blue-500' : ''}`}
-              onClick={() => setSelectedId(cfg.id)}
+              className={`bg-surface border border-line rounded-xl p-4 sm:p-5 ${selectedConfig?.id === cfg.id ? 'ring-2 ring-blue-500' : ''}`}
             >
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="font-medium text-primary">From <span>{cfg.valid_from}</span></span>
-                  <span className="ml-3 text-muted text-sm">RAL €{fmt(cfg.ral)}</span>
+              <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
+                <div className="min-w-0">
+                  <button type="button" aria-expanded={selectedConfig?.id === cfg.id} onClick={() => setSelectedId(selectedConfig?.id === cfg.id ? '' : cfg.id)} className="min-h-11 font-medium text-primary text-left rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600">From <span>{cfg.valid_from}</span> · {selectedConfig?.id === cfg.id ? 'Hide breakdown' : 'Show breakdown'}</button>
+                  <p className="text-muted text-sm">RAL €{fmt(cfg.ral)}</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3 sm:justify-end">
                   <Button
                     variant="ghost"
                     className="text-xs"
@@ -247,7 +246,7 @@ export default function SalaryPage() {
                   >
                     Edit
                   </Button>
-                  <div className="text-right">
+                  <div className="sm:text-right">
                     <div className="text-lg font-bold text-blue-700 dark:text-blue-400">€{fmt(cfg.effective_net_monthly ?? cfg.manual_net_override ?? cfg.computed_net_monthly)}<span className="text-sm text-faint">/mo</span></div>
                     {cfg.manual_net_override != null && (
                       <div className="text-xs text-yellow-600">manual override (computed: €{fmt(cfg.computed_net_monthly)})</div>

@@ -25,7 +25,7 @@ export default function StepReview() {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Review & confirm</h2>
-      <div className="text-sm text-gray-700 space-y-1 bg-gray-50 rounded p-3">
+      <div className="text-sm text-secondary space-y-2 bg-subtle border border-line rounded-xl p-4 break-words">
         <div><strong>Start date:</strong> {data.tracking_start_date ?? '—'}</div>
         <div><strong>Main bank:</strong> {data.main_bank?.name ?? '—'} (€{data.main_bank?.opening_balance?.toFixed(2) ?? '0.00'})</div>
         <div><strong>Additional banks:</strong> {data.additional_banks?.length ?? 0}</div>
@@ -35,7 +35,7 @@ export default function StepReview() {
         {data.salary && <div><strong>RAL:</strong> €{data.salary.ral.toLocaleString()}</div>}
       </div>
       {error && <div role="alert" className="text-sm text-red-600">{error}</div>}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" type="button" onClick={() => setStep(7)}>Back</Button>
         <Button onClick={() => mutate()} isLoading={isPending}>Confirm & start</Button>
       </div>

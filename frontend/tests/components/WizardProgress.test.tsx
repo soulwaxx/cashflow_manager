@@ -12,5 +12,7 @@ test('WizardProgress highlights completed steps', () => {
   // Steps 1 and 2 are completed; step 3 is active
   expect(steps[0]).toHaveClass('bg-blue-600');
   expect(steps[1]).toHaveClass('bg-blue-600');
-  expect(steps[2]).toHaveClass('bg-blue-200');
+  expect(steps[2]).toHaveClass('bg-blue-300');
+  expect(steps[2]).toHaveAttribute('aria-current', 'step');
+  expect(screen.getByRole('list', { name: 'Setup progress' })).toBeInTheDocument();
 });

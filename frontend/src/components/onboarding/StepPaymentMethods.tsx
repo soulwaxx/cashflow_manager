@@ -34,12 +34,13 @@ export default function StepPaymentMethods() {
   return (
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Payment methods (optional)</h2>
-      <div className="flex gap-2 flex-wrap">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <Input label="Name" type="text" value={name} onChange={(e) => setName(e.target.value)} />
         <div className="flex flex-col gap-1">
-          <label className="text-sm font-medium text-gray-700">Type</label>
+          <label htmlFor="setup-payment-type" className="text-sm font-medium text-secondary">Type</label>
           <select
-            className="border rounded px-3 py-2 text-sm"
+            id="setup-payment-type"
+            className="w-full min-h-11 border border-line-strong rounded-lg px-3 py-2 text-base sm:text-sm bg-elevated text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600"
             value={type}
             onChange={(e) => setType(e.target.value as PMType)}
           >
@@ -49,19 +50,19 @@ export default function StepPaymentMethods() {
         {isBankFundedCard && mainBankName && (
           <Input label="Linked bank" type="text" required value={linked} onChange={(e) => setLinked(e.target.value)} placeholder={mainBankName} />
         )}
-        <Button variant="secondary" type="button" onClick={add} className="self-end">Add</Button>
+        <Button variant="secondary" type="button" onClick={add} className="self-end sm:col-span-2 sm:justify-self-start">Add</Button>
       </div>
       {methods.length > 0 && (
         <ul className="text-sm space-y-1">
           {methods.map((m, i) => (
-            <li key={i} className="flex justify-between border rounded px-3 py-1">
+            <li key={i} className="flex flex-wrap justify-between gap-2 border border-line bg-subtle rounded-lg px-3 py-2 break-words">
               <span>{m.name}</span>
-              <span className="text-gray-500">{m.type}</span>
+              <span className="text-muted">{m.type}</span>
             </li>
           ))}
         </ul>
       )}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
         <Button variant="secondary" type="button" onClick={() => setStep(3)}>Back</Button>
         <Button type="button" onClick={next}>Next</Button>
       </div>

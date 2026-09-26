@@ -8,4 +8,3 @@ from app.models.transfer import Transfer  # noqa: F401
 from app.models.asset import Asset  # noqa: F401
 from app.models.salary import SalaryConfig  # noqa: F401
 from app.models.tax import TaxConfig  # noqa: F401
-from app.models.forecast import Forecast, ForecastLine, ForecastAdjustment  # noqa: F401

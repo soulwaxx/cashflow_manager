@@ -75,8 +75,6 @@ def create_app() -> FastAPI:
     app.include_router(assets_router.router, prefix="/api/v1")
     from app.routers import analytics as analytics_router
     app.include_router(analytics_router.router, prefix="/api/v1")
-    from app.routers import forecasts as forecasts_router
-    app.include_router(forecasts_router.router, prefix="/api/v1")
     from app.routers import user_settings as us_router, users as users_router
     app.include_router(us_router.router, prefix="/api/v1")
     app.include_router(users_router.router, prefix="/api/v1")

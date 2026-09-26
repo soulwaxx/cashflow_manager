@@ -15,7 +15,6 @@ CashFlow Manager is a self-hosted, multi-user app for personal finances. It runs
 - **Monthly summaries:** Review bank balances, net cash flow, and category totals.
 - **Analytics:** Compare spending trends and category totals over a selected period.
 - **Salary and tax:** Calculate net salary under Italian personal income tax (IRPEF) and social security (INPS) rules.
-- **Forecasts:** Project monthly spending commitments from recurring purchases; edit imported lines and future adjustments. Forecast totals are not bank balances.
 - **Onboarding:** Configure accounts, payment methods, and salary through a guided setup.
 - **Responsive interface:** Use the app on desktop and mobile devices.
 

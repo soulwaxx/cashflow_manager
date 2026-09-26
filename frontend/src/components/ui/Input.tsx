@@ -10,7 +10,7 @@ export function Input({ label, hint, error, id, className = '', required, ref, .
   const generatedId = useId();
   const inputId = id ?? generatedId;
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex min-w-0 flex-col gap-1">
       <label htmlFor={inputId} className="text-sm font-medium text-secondary">
         {label}{required && <span className="text-red-500 ml-0.5">*</span>}
       </label>
@@ -18,7 +18,7 @@ export function Input({ label, hint, error, id, className = '', required, ref, .
         id={inputId}
         ref={ref}
         required={required}
-        className={`border rounded-md px-3 py-2 text-sm bg-elevated text-primary placeholder-faint focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+        className={`min-w-0 w-full min-h-11 border rounded-lg px-3 py-2 text-base sm:text-sm bg-elevated text-primary placeholder-faint focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${
           error ? 'border-red-500' : 'border-line-strong'
         } ${className}`}
         {...props}

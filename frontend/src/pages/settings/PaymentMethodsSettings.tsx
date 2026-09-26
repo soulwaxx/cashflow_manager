@@ -132,16 +132,16 @@ export default function PaymentMethodsSettings() {
 
       <ul className="space-y-2">
         {methods.map((m) => (
-          <li key={m.id} className="bg-surface border border-line rounded-lg p-4 flex items-center justify-between">
+          <li key={m.id} className="bg-surface border border-line rounded-xl p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-primary">{m.name}</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium text-primary break-words">{m.name}</span>
                 {m.is_main_bank && <Badge color="blue">Main bank</Badge>}
                 {!m.is_active && <Badge color="gray">Inactive</Badge>}
               </div>
               <div className="text-xs text-muted mt-0.5">{m.type}</div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="secondary"
                 className="text-xs"
@@ -164,7 +164,7 @@ export default function PaymentMethodsSettings() {
                 <Button
                   variant="ghost"
                   className="text-xs text-red-500"
-                  onClick={() => window.confirm('Deactivate?') && deactivate(m.id)}
+                  onClick={() => window.confirm(`Deactivate ${m.name}? Existing transactions will remain.`) && deactivate(m.id)}
                 >
                   Deactivate
                 </Button>

@@ -12,7 +12,6 @@ def test_all_tables_created():
             "users", "user_settings", "payment_methods", "main_bank_history",
             "categories", "transactions", "transfers", "assets",
             "salary_config", "tax_config",
-            "forecasts", "forecast_lines", "forecast_adjustments",
         ]
         for table in expected:
             assert table in tables, f"Missing table: {table}"

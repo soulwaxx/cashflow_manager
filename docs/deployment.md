@@ -93,7 +93,9 @@ services:
 
 ## Upgrading
 
-`deploy/docker-compose.yml` tracks the `latest` GitHub Container Registry (GHCR) image. To upgrade, pull the current image and restart:
+`deploy/docker-compose.yml` tracks the `latest` GitHub Container Registry (GHCR) image. **Before upgrading to migration 018**, take a consistent SQLite backup using the command below. That migration permanently deletes all saved forecasts, lines, and adjustments; downgrading cannot restore them. Other financial data is unaffected.
+
+To upgrade, pull the current image and restart:
 
 ```bash
 cd deploy/
