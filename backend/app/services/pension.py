@@ -9,6 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_EVEN
+from fractions import Fraction
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -92,6 +93,30 @@ def _month(value: str, *, name: str = "month") -> date:
 
 def _round_money(value: Decimal) -> Decimal:
     return value.quantize(CENT, rounding=ROUND_HALF_EVEN)
+
+
+def _round_fraction_money(value: Fraction) -> Decimal:
+    cents, remainder = divmod(value.numerator * 100, value.denominator)
+    doubled_remainder = remainder * 2
+    if doubled_remainder > value.denominator or (
+        doubled_remainder == value.denominator and cents % 2
+    ):
+        cents += 1
+    return Decimal(cents).scaleb(-2)
+
+
+def _monthly_credit_fractions(
+    config: PensionConfig | None, month: date
+) -> tuple[Fraction, Fraction, Fraction]:
+    if config is None or config.valid_from > month.isoformat():
+        return Fraction(0), Fraction(0), Fraction(0)
+    weights = _calendar(config)
+    weight, total_weight = weights[month.month - 1], sum(weights)
+    annual = _annualized_components(config)
+    return tuple(
+        Fraction(amount) * weight / total_weight
+        for amount in (annual.employee_annual, annual.employer_annual, annual.tfr_annual)
+    )
 
 
 def _finite_nonnegative(value: Any, label: str) -> Decimal:
@@ -290,8 +315,6 @@ def _account_transfer_month(transfer: Transfer) -> date:
         transfer_date = date.fromisoformat(transfer.date)
     except (TypeError, ValueError):
         raise ValueError(f"Transfer {transfer.id} has an invalid date") from None
-    if transfer_date.isoformat() != transfer.date:
-        raise ValueError(f"Transfer {transfer.id} has an invalid date")
     return date(transfer_date.year, transfer_date.month, 1)
 
 
@@ -358,10 +381,7 @@ def pension_balances(db: Session, user_id: str, as_of_month: str) -> list[Pensio
     next_month = date(cutoff.year + (cutoff.month == 12), 1 if cutoff.month == 12 else cutoff.month + 1, 1)
     transfers: list[Transfer] = (
         db.query(Transfer)
-        .filter(
-            Transfer.user_id == user_id,
-            Transfer.date < next_month.isoformat(),
-        )
+        .filter(Transfer.user_id == user_id)
         .order_by(Transfer.date, Transfer.id)
         .all()
     )
@@ -381,6 +401,8 @@ def pension_balances(db: Session, user_id: str, as_of_month: str) -> list[Pensio
             continue
         amount = _finite_nonnegative(transfer.amount, "transfer amount")
         transfer_month = _account_transfer_month(transfer)
+        if transfer_month >= next_month:
+            continue
         for endpoint_id, sign in relevant:
             flows = transfer_flows[endpoint_id]
             flows[transfer_month] = flows.get(transfer_month, ZERO) + amount * sign
@@ -404,8 +426,8 @@ def pension_balances(db: Session, user_id: str, as_of_month: str) -> list[Pensio
         if baseline_month > cutoff:
             continue
 
-        employees = employers = tfrs = net_transfers = ZERO
-        balance = baseline
+        employees = employers = tfrs = net_transfers = Fraction(0)
+        balance = Fraction(baseline)
         if selected_snapshot is None:
             first_flow_month = baseline_month
         else:
@@ -420,16 +442,16 @@ def pension_balances(db: Session, user_id: str, as_of_month: str) -> list[Pensio
             # destination selected by that effective period.
             effective = resolve_config_from_loaded(configs, current)
             if effective is not None and effective.account_id == account_id:
-                credit = monthly_credit(effective, current.isoformat())
+                employee, employer, tfr = _monthly_credit_fractions(effective, current)
             else:
-                credit = PensionMonthlyCredit(ZERO, ZERO, ZERO)
-            employees += credit.employee
-            employers += credit.employer
-            tfrs += credit.tfr
-            balance += credit.employee + credit.employer + credit.tfr
+                employee = employer = tfr = Fraction(0)
+            employees += employee
+            employers += employer
+            tfrs += tfr
+            balance += employee + employer + tfr
             signed_amount = transfer_flows[account_id].get(current, ZERO)
-            net_transfers += signed_amount
-            balance += signed_amount
+            net_transfers += Fraction(signed_amount)
+            balance += Fraction(signed_amount)
 
         source = selected_snapshot.source if selected_snapshot else None
         status = {
@@ -441,11 +463,11 @@ def pension_balances(db: Session, user_id: str, as_of_month: str) -> list[Pensio
             PensionAccountBalance(
                 account_id=account_id,
                 account_name=account.name,
-                balance=_round_money(balance),
-                employee_contributions=_round_money(employees),
-                employer_contributions=_round_money(employers),
-                tfr_contributions=_round_money(tfrs),
-                net_transfers=_round_money(net_transfers),
+                balance=_round_fraction_money(balance),
+                employee_contributions=_round_fraction_money(employees),
+                employer_contributions=_round_fraction_money(employers),
+                tfr_contributions=_round_fraction_money(tfrs),
+                net_transfers=_round_fraction_money(net_transfers),
                 valuation_status=status,
                 reconciled_as_of_month=selected_snapshot.as_of_month if selected_snapshot else None,
                 reconciled_balance=_round_money(baseline) if selected_snapshot else None,

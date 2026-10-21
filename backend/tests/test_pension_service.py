@@ -80,6 +80,41 @@ def _tax(db, user_id, *, valid_from="2025-01-01", cap="5164.57", config_id=None)
     return tax
 
 
+def test_final_balance_rounding_is_exact_half_even_across_monthly_credits(db):
+    user = _user(db)
+    account = _account(db, user.id, "rounding", opening="0")
+    _config(
+        db, user.id, account.id, employee_rate="0.01", employee_base="59999.50",
+        employer_rate="0", employer_base="0", tfr="0",
+    )
+    lower_user = _user(db, "lower-tie@example.com")
+    lower_tie = _account(db, lower_user.id, "lower-tie", opening="0")
+    _config(
+        db, lower_user.id, lower_tie.id, employee_rate="0.01", employee_base="59998.50",
+        employer_rate="0", employer_base="0", tfr="0",
+    )
+    db.commit()
+
+    balances = {row.account_id: row for row in pension_balances(db, user.id, "2025-12-01")}
+    assert balances[account.id].balance == D("600.00")
+    assert balances[account.id].employee_contributions == D("600.00")
+    lower_balance = pension_balances(db, lower_user.id, "2025-12-01")[0]
+    assert lower_balance.balance == D("599.98")
+    assert lower_balance.employee_contributions == D("599.98")
+
+    combined_user = _user(db, "combined-rounding@example.com")
+    combined_account = _account(db, combined_user.id, "combined-rounding", opening="0")
+    _config(
+        db, combined_user.id, combined_account.id, employee_rate="0.01", employee_base="0.50",
+        employer_rate="0.01", employer_base="0.50", tfr="0",
+    )
+    db.commit()
+    combined = pension_balances(db, combined_user.id, "2025-12-01")[0]
+    assert combined.employee_contributions == D("0.00")
+    assert combined.employer_contributions == D("0.00")
+    assert combined.balance == D("0.01")
+
+
 def test_effective_configs_are_owner_scoped_and_missing_means_zero(db):
     from app.services.pension import PensionComponents
 

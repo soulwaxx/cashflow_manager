@@ -340,6 +340,58 @@ test('pension creation blocks direct form submission when lookup succeeds with n
   expect(postCount).toBe(0);
 });
 
+test('editing a salary period beyond the selected month hides its cached breakdown', async () => {
+  const user = userEvent.setup();
+  let effectiveFrom = '2026-01-01';
+  server.use(
+    http.get('/api/v1/salary', () => HttpResponse.json([{ ...salary, valid_from: effectiveFrom }])),
+    http.get('/api/v1/pension/configs', () => HttpResponse.json([])),
+    http.put('/api/v1/salary/s1', async ({ request }) => {
+      const body = await request.json() as { valid_from: string };
+      effectiveFrom = body.valid_from;
+      return HttpResponse.json({ ...salary, ...body });
+    }),
+  );
+  render(<SalaryPage />, { wrapper });
+  fireEvent.change(screen.getByLabelText(/selected effective\/reporting month/i), { target: { value: '2026-03-01' } });
+  expect(await screen.findByText(/Computed net annual €30\.500,00/)).toBeInTheDocument();
+
+  await user.click((await screen.findAllByRole('button', { name: /^edit$/i }))[0]);
+  const dialog = screen.getByRole('dialog');
+  fireEvent.change(within(dialog).getByLabelText(/effective from/i), { target: { value: '2026-04-01' } });
+  await user.click(within(dialog).getByRole('button', { name: /save salary period/i }));
+
+  expect(await screen.findByRole('status')).toHaveTextContent(/No salary period applies to this month/i);
+  expect(screen.queryByText(/Computed net annual/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Gross annual/)).not.toBeInTheDocument();
+});
+
+test.each([
+  [404, 'No salary config'],
+  [422, 'No tax config found for the given period'],
+] as const)('a failed selected-month breakdown refetch (%i) hides cached financial values and shows its error', async (status, detail) => {
+  let failMarch = false;
+  server.use(http.get('/api/v1/salary/breakdown', ({ request }) => {
+    if (new URL(request.url).searchParams.get('as_of') === '2026-03-01' && failMarch) {
+      return HttpResponse.json({ detail }, { status });
+    }
+    return HttpResponse.json(breakdown);
+  }));
+  render(<SalaryPage />, { wrapper });
+  const monthInput = screen.getByLabelText(/selected effective\/reporting month/i);
+  fireEvent.change(monthInput, { target: { value: '2026-03-01' } });
+  expect(await screen.findByText(/Computed net annual €30\.500,00/)).toBeInTheDocument();
+
+  fireEvent.change(monthInput, { target: { value: '2026-04-01' } });
+  expect(await screen.findByText(/Computed net annual €30\.500,00/)).toBeInTheDocument();
+  failMarch = true;
+  fireEvent.change(monthInput, { target: { value: '2026-03-01' } });
+
+  expect(await screen.findByRole('status')).toHaveTextContent(detail);
+  expect(screen.queryByText(/Computed net annual/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Gross annual/)).not.toBeInTheDocument();
+});
+
 test('pension edit preserves its destination through lookup failure and updates only after recovery', async () => {
   const user = userEvent.setup();
   let recovered = false;

@@ -264,10 +264,6 @@ def _preflight(bind):
                 raise RuntimeError(
                     f"Pension migration preflight: transfer {transfer['id']} has an invalid date; remediate the date"
                 ) from None
-            if parsed_transfer_date.isoformat() != transfer_date:
-                raise RuntimeError(
-                    f"Pension migration preflight: transfer {transfer['id']} has a noncanonical date; use YYYY-MM-DD"
-                )
             transfer_months[account["id"]].append(
                 f"{parsed_transfer_date.year:04d}-{parsed_transfer_date.month:02d}-01"
             )

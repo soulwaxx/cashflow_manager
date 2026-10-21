@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Decimal
+from fractions import Fraction
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field, field_validator
@@ -19,7 +20,10 @@ from app.schemas.pension import (
     PensionSummaryResponse,
 )
 from app.schemas.reporting import MAX_REPORTING_YEAR, MIN_REPORTING_YEAR
-from app.services.pension import monthly_credit, payroll_effects, resolve_config_from_loaded, resolve_pension_config
+from app.services.pension import (
+    _monthly_credit_fractions, _round_fraction_money, payroll_effects,
+    resolve_config_from_loaded, resolve_pension_config,
+)
 
 router = APIRouter(prefix="/pension", tags=["pension"])
 
@@ -195,16 +199,17 @@ def pension_summary(year: int = Query(ge=MIN_REPORTING_YEAR, le=MAX_REPORTING_YE
         PensionConfig.user_id == current_user.id,
         PensionConfig.valid_from <= as_of,
     ).order_by(PensionConfig.valid_from, PensionConfig.id).all()
-    components = {"employee": Decimal(0), "employer": Decimal(0), "tfr": Decimal(0)}
+    components = {"employee": Fraction(0), "employer": Fraction(0), "tfr": Fraction(0)}
     for month in range(1, parsed.month + 1):
         cutoff = date(year, month, 1)
         active = resolve_config_from_loaded(configs, cutoff)
-        credit = monthly_credit(active, cutoff.isoformat())
-        components["employee"] += credit.employee
-        components["employer"] += credit.employer
-        components["tfr"] += credit.tfr
-    def money(value: Decimal) -> float:
-        return float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
+        employee, employer, tfr = _monthly_credit_fractions(active, cutoff)
+        components["employee"] += employee
+        components["employer"] += employer
+        components["tfr"] += tfr
+    def money(value: Decimal | Fraction) -> float:
+        exact = value if isinstance(value, Fraction) else Fraction(value)
+        return float(_round_fraction_money(exact))
 
     return {
         "year": year, "as_of": as_of,

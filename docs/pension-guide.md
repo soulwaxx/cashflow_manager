@@ -37,6 +37,8 @@ Projected pension credits do not create salary transactions or change transactio
 
 ## Existing pension history and backups
 
+The migration copies each legacy salary period's RAL into the independent employee and employer contribution bases, preserves its contribution rates, and sets TFR to zero. This preserves the configured contribution amounts, but corrected payroll calculations apply immediately and can change computed net salary. Manual net overrides remain unchanged; cumulative pension balances also include prior years and owned transfers rather than preserving the former annual-only estimate.
+
 During the schema conversion, an old annual pension override has no stored statement date. It is preserved as a legacy reconciliation at **December of that year**, explicitly as an assumed month-end date, not as a claim about when the provider issued a statement. As a result, that value is not applied retroactively to every month in the year. Review historical balances and add a correctly dated statement snapshot when its actual month is known.
 
 Take a consistent database backup before an upgrade that changes pension storage. The new effective contribution bases and dated snapshots cannot generally be converted back into the former salary-rate and annual-override representation. Rollback therefore means restoring the pre-upgrade backup, not downgrading the schema. Restoring that backup also removes every change made after it was taken. Verify the backup and keep it separate until the upgraded application and data have been checked.

@@ -8,6 +8,40 @@ def _setup(client):
     })
     client.post("/api/v1/onboarding", json=WIZARD_PAYLOAD)
 
+@pytest.mark.parametrize(("accepted_date", "canonical_date"), [
+    ("20260120", "2026-01-20"),
+    ("2026-W04-2", "2026-01-20"),
+])
+def test_create_transfer_normalizes_accepted_iso_date_forms(client, accepted_date, canonical_date):
+    _setup(client)
+    response = client.post("/api/v1/transfers", json={
+        "date": accepted_date, "amount": 100,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+    })
+    assert response.status_code == 200, response.text
+    assert response.json()["date"] == canonical_date
+    assert response.json()["billing_month"] == "2026-01-01"
+
+
+def test_update_transfer_normalizes_date_and_cascade_updates_only_date_target(client):
+    _setup(client)
+    root = client.post("/api/v1/transfers", json={
+        "date": "2026-01-10", "amount": 100,
+        "from_account_type": "bank", "from_account_name": "MyBank",
+        "to_account_type": "saving", "to_account_name": "MySavings",
+        "recurrence_months": 2,
+    }).json()
+    february = next(row for row in client.get("/api/v1/transfers", params={"limit": 1000}).json()
+                   if row["parent_transfer_id"] == root["id"])
+    response = client.put(f"/api/v1/transfers/{february['id']}", json={"date": "20260312"},
+                          params={"cascade": "all"})
+    assert response.status_code == 200, response.text
+    assert response.json()["date"] == "2026-03-12"
+    rows = client.get("/api/v1/transfers", params={"limit": 1000}).json()
+    assert next(row for row in rows if row["id"] == root["id"])["date"] == "2026-01-10"
+
+
 def test_create_transfer(client):
     _setup(client)
     r = client.post("/api/v1/transfers", json={

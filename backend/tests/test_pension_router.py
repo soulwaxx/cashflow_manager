@@ -176,6 +176,19 @@ def test_pension_summary_rounds_money_half_even_only_at_response_boundary(client
     assert data["year_to_date"] == {"employee": 0.02, "employer": 0.02, "tfr": 0.02}
 
 
+def test_pension_summary_aggregates_exact_monthly_year_to_date_before_rounding(client):
+    account = _setup(client)
+    config = _config(
+        account["id"], employee_contrib_rate=0.01, employee_contrib_annual_base=59999.5,
+        employer_contrib_rate=0, employer_contrib_annual_base=0, tfr_contrib_annual=0,
+    )
+    assert client.post("/api/v1/pension/configs", json=config).status_code == 201
+
+    response = client.get("/api/v1/pension/summary?year=2026&as_of=2026-12-01")
+    assert response.status_code == 200, response.text
+    assert response.json()["year_to_date"] == {"employee": 600, "employer": 0, "tfr": 0}
+
+
 def test_pension_summary_reports_dated_flows_and_cap_scope(client):
     account = _setup(client)
     response = client.post("/api/v1/pension/configs", json=_config(account["id"]))

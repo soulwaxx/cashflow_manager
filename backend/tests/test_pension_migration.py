@@ -114,6 +114,35 @@ def test_pension_migration_backfills_supported_source_revisions(tmp_path, source
     engine.dispose()
 
 
+def test_migration_accepts_historically_supported_compact_transfer_date(tmp_path):
+    db_path = tmp_path / "compact-transfer-date.db"
+    cfg = _cfg(db_path)
+    command.upgrade(cfg, "018remove_forecasting")
+    engine = _engine(db_path)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "INSERT INTO users (id, email, name) VALUES ('user-1', 'one@example.com', 'One')"
+        )
+        connection.exec_driver_sql("""
+            INSERT INTO accounts (id, user_id, type, name, opening_balance, is_active)
+            VALUES ('pension-1', 'user-1', 'pension', 'Fund', 0, 1)
+        """)
+        connection.exec_driver_sql("""
+            INSERT INTO transfers
+                (id, user_id, date, detail, amount, from_account_type, from_account_name,
+                 from_account_id, to_account_type, to_account_name, to_account_id, billing_month)
+            VALUES ('transfer-1', 'user-1', '20260120', 'Legacy', 100, 'saving', 'Savings',
+                    NULL, 'pension', 'Fund', 'pension-1', '2026-01-01')
+        """)
+    command.upgrade(cfg, "019pension_foundation")
+    with engine.connect() as connection:
+        assert connection.exec_driver_sql(
+            "SELECT opening_balance_month FROM accounts WHERE id = 'pension-1'"
+        ).scalar_one() == "2026-01-01"
+        assert connection.exec_driver_sql("SELECT date FROM transfers WHERE id='transfer-1'").scalar_one() == "20260120"
+    engine.dispose()
+
+
 def test_migration_canonicalizes_one_ulp_legacy_float_only_in_new_config(tmp_path):
     db_path = tmp_path / "one-ulp-rate.db"
     cfg = _cfg(db_path)

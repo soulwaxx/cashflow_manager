@@ -13,7 +13,7 @@ def _validate_iso_date(v: str) -> str:
         datetime.date.fromisoformat(v)
     except ValueError:
         raise ValueError(f"Invalid date format: {v!r} (expected YYYY-MM-DD)")
-    return v
+    return datetime.date.fromisoformat(v).isoformat()
 
 
 class TransferCreate(BaseModel):
