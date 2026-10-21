@@ -8,3 +8,4 @@ from app.models.transfer import Transfer  # noqa: F401
 from app.models.asset import Asset  # noqa: F401
 from app.models.salary import SalaryConfig  # noqa: F401
 from app.models.tax import TaxConfig  # noqa: F401
+from app.models.pension import PensionConfig, PensionBalanceSnapshot  # noqa: F401

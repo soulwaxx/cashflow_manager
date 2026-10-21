@@ -11,7 +11,7 @@ CashFlow Manager is a self-hosted, multi-user app for personal finances. It runs
 - **Transactions:** Record income, purchases, refunds, categories, payment methods, and tags.
 - **Recurring transactions:** Create a fixed number of monthly transaction occurrences.
 - **Transfers:** Move money between your accounts.
-- **Assets:** Track savings, investments, pensions, and property.
+- **Assets:** Track savings, investments, pensions, and property. See the [pension setup and reconciliation guide](docs/pension-guide.md) for pension estimate and snapshot behavior.
 - **Monthly summaries:** Review bank balances, net cash flow, and category totals.
 - **Analytics:** Compare spending trends and category totals over a selected period.
 - **Salary and tax:** Calculate net salary under Italian personal income tax (IRPEF) and social security (INPS) rules.
@@ -73,7 +73,7 @@ Single Docker container (port 8080)
 
 `supervisord` manages Nginx and Uvicorn. FastAPI applies Alembic migrations before it accepts requests.
 
-Development runs the frontend and backend as separate services. Read [docs/architecture.md](docs/architecture.md) for the system design and data flow.
+Development runs the frontend and backend as separate services. Read [docs/architecture.md](docs/architecture.md) for the system design and data flow. Pension behavior is covered in the [pension setup and reconciliation guide](docs/pension-guide.md).
 
 ## Configuration
 

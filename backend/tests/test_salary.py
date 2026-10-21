@@ -36,13 +36,11 @@ def test_inps_computed_correctly():
     b = calculate_salary(MockSalaryCfg(ral=42000), MockTaxCfg())
     assert b.social_security == pytest.approx(42000 * 0.0919, rel=1e-4)
 
-def test_deductible_below_cap():
-    b = calculate_salary(MockSalaryCfg(ral=42000, employer_contrib_rate=0.04, voluntary_contrib_rate=0.02), MockTaxCfg())
-    assert b.pension_deductible == pytest.approx(42000 * 0.06, rel=1e-4)
-
-def test_deductible_capped():
-    b = calculate_salary(MockSalaryCfg(ral=42000, employer_contrib_rate=0.15, voluntary_contrib_rate=0.05), MockTaxCfg())
-    assert b.pension_deductible == pytest.approx(5300.00, rel=1e-3)
+def test_no_pension_input_does_not_fall_back_to_ral_or_old_salary_rates():
+    b = calculate_salary(MockSalaryCfg(ral=42000), MockTaxCfg())
+    assert b.employee_pension_contribution_annual == 0
+    assert b.employer_pension_contribution_annual == 0
+    assert b.pension_cap_used_annual == 0
 
 def test_irpef_first_band_only():
     b = calculate_salary(MockSalaryCfg(ral=24000, employer_contrib_rate=0, voluntary_contrib_rate=0), MockTaxCfg())
@@ -60,22 +58,23 @@ def test_irpef_netto_never_negative():
 def test_netto_mensile_is_annual_div_12():
     b = calculate_salary(MockSalaryCfg(ral=42000), MockTaxCfg())
     # net_monthly is rounded to 2dp; check within rounding tolerance
-    assert b.net_monthly == pytest.approx(round(b.net_annual / 12, 2), abs=0.01)
+    assert b.computed_net_monthly == pytest.approx(round(b.net_annual / 12, 2), abs=0.01)
 
 def test_meal_vouchers_excluded_from_netto_mensile():
     b1 = calculate_salary(MockSalaryCfg(ral=42000, meal_vouchers_annual=0), MockTaxCfg())
     b2 = calculate_salary(MockSalaryCfg(ral=42000, meal_vouchers_annual=2400), MockTaxCfg())
-    assert b1.net_monthly == pytest.approx(b2.net_monthly, rel=1e-6)
+    assert b1.computed_net_monthly == pytest.approx(b2.computed_net_monthly, rel=1e-6)
     assert b2.meal_vouchers_monthly == pytest.approx(200.0)
 
 def test_salary_api_calculate_returns_breakdown(client):
     client.post("/api/v1/auth/register", json={
         "email": "alice@example.com", "password": "Password1!", "name": "Alice"
     })
-    r = client.get("/api/v1/salary/calculate", params={
-        "as_of": "2026-01-01", "ral": 42000,
-        "employer_contrib_rate": 0.04, "voluntary_contrib_rate": 0.02,
-        "regional_tax_rate": 0.0173, "municipal_tax_rate": 0.008,
+    r = client.post("/api/v1/salary/calculate", json={
+        "as_of": "2026-01-01",
+        "salary": {"ral": 42000, "regional_tax_rate": 0.0173,
+                   "municipal_tax_rate": 0.008, "salary_months": 12},
+        "pension": None,
     })
     assert r.status_code == 200
-    assert r.json()["net_monthly"] > 0
+    assert r.json()["computed_net_monthly"] > 0

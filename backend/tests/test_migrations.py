@@ -1,5 +1,7 @@
 # backend/tests/test_migrations.py
+import contextlib
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -74,6 +76,7 @@ def test_migration_head_creates_expected_schema():
         # salary_config table
         salary_cols = {c["name"] for c in inspector.get_columns("salary_config")}
         assert "salary_months" in salary_cols
+        assert not {"employer_contrib_rate", "voluntary_contrib_rate", "computed_net_monthly"} & salary_cols
 
         # tax_config table — new column names, old names gone
         tax_cols = {c["name"] for c in inspector.get_columns("tax_config")}
@@ -106,6 +109,18 @@ def test_migration_head_creates_expected_schema():
             uc["name"] for uc in inspector.get_unique_constraints("card_bank_link_history")
         }
         assert "uq_card_bank_link_effective" in link_unique_constraints
+
+        # Issue #94 additive pension persistence.
+        account_cols = {c["name"] for c in inspector.get_columns("accounts")}
+        assert "opening_balance_month" in account_cols
+        pension_config_cols = {c["name"] for c in inspector.get_columns("pension_configs")}
+        assert {
+            "employee_contrib_rate", "employee_contrib_annual_base",
+            "employer_contrib_rate", "employer_contrib_annual_base",
+            "tfr_contrib_annual", "contribution_periods_by_month",
+        } <= pension_config_cols
+        pension_snapshot_cols = {c["name"] for c in inspector.get_columns("pension_balance_snapshots")}
+        assert {"as_of_month", "balance", "source", "notes"} <= pension_snapshot_cols
 
         # Reconciled ORM non-null constraints and indexes.
         expected_not_null = {
@@ -334,7 +349,7 @@ def test_migration_removes_orphaned_financial_rows_without_touching_owned_data()
                      'pension', 'Pension', 'investment', 'Owned', '2026-01-01', 'account-orphan')
             """)
 
-        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "018remove_forecasting")
 
         with engine.connect() as connection:
             assert connection.exec_driver_sql(
@@ -362,17 +377,135 @@ def test_migration_removes_orphaned_financial_rows_without_touching_owned_data()
         os.unlink(db_path)
 
 
+def test_pension_migration_rejects_unmatched_override_without_guessing_account():
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        db_path = f.name
+    try:
+        cfg = _cfg(db_path)
+        command.upgrade(cfg, "018remove_forecasting")
+        engine = create_engine(f"sqlite:///{db_path}")
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, email, name) VALUES ('user-1', 'migration@example.com', 'Migration')"
+            )
+            connection.exec_driver_sql("""
+                INSERT INTO assets (id, user_id, year, asset_type, asset_name, manual_override, notes)
+                VALUES ('unmatched-pension-override', 'user-1', 2026, 'pension', 'Legacy fund', 987.65, 'keep audit note')
+            """)
+
+        with pytest.raises(RuntimeError, match="has no owned pension account"):
+            command.upgrade(cfg, "head")
+
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one() == "018remove_forecasting"
+            assert connection.exec_driver_sql("""
+                SELECT id, account_id, manual_override, notes FROM assets
+                WHERE id = 'unmatched-pension-override'
+            """).mappings().one() == {
+                "id": "unmatched-pension-override", "account_id": None,
+                "manual_override": 987.65, "notes": "keep audit note",
+            }
+            assert "pension_configs" not in inspect(engine).get_table_names()
+            assert connection.exec_driver_sql("""
+                SELECT COUNT(*) FROM accounts WHERE user_id = 'user-1' AND type = 'pension'
+            """).scalar_one() == 0
+    finally:
+        engine.dispose()
+        os.unlink(db_path)
+
+
 def test_migration_018_requires_backup_for_downgrade(tmp_path):
     db_path = str(tmp_path / "retired-forecast.db")
     cfg = _cfg(db_path)
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "018remove_forecasting")
 
     with pytest.raises(RuntimeError, match="pre-upgrade database backup"):
         command.downgrade(cfg, "017remove_orphans")
 
     engine = create_engine(f"sqlite:///{db_path}")
     try:
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one() == "018remove_forecasting"
         assert not {"forecasts", "forecast_lines", "forecast_adjustments"} & set(inspect(engine).get_table_names())
+    finally:
+        engine.dispose()
+
+
+def test_migration_019_requires_backup_and_restores_preupgrade_copy(tmp_path):
+    backup_path = tmp_path / "pre-pension-backup.db"
+    candidate_path = tmp_path / "pension-candidate.db"
+    backup_cfg = _cfg(str(backup_path))
+    candidate_cfg = _cfg(str(candidate_path))
+    command.upgrade(backup_cfg, "018remove_forecasting")
+    with contextlib.closing(sqlite3.connect(backup_path)) as backup, contextlib.closing(
+        sqlite3.connect(candidate_path)
+    ) as candidate:
+        backup.backup(candidate)
+
+    command.upgrade(candidate_cfg, "019pension_foundation")
+    with pytest.raises(RuntimeError, match="restore a pre-upgrade database backup"):
+        command.downgrade(candidate_cfg, "018remove_forecasting")
+
+    candidate_engine = create_engine(f"sqlite:///{candidate_path}")
+    try:
+        with candidate_engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one() == "019pension_foundation"
+        assert "opening_balance_month" in {
+            column["name"] for column in inspect(candidate_engine).get_columns("accounts")
+        }
+    finally:
+        candidate_engine.dispose()
+
+    with contextlib.closing(sqlite3.connect(backup_path)) as backup, contextlib.closing(
+        sqlite3.connect(candidate_path)
+    ) as candidate:
+        backup.backup(candidate)
+    restored_engine = create_engine(f"sqlite:///{candidate_path}")
+    try:
+        with restored_engine.connect() as connection:
+            assert connection.exec_driver_sql(
+                "SELECT version_num FROM alembic_version"
+            ).scalar_one() == "018remove_forecasting"
+        columns = {column["name"] for column in inspect(restored_engine).get_columns("accounts")}
+        assert "opening_balance_month" not in columns
+        assert not {"pension_configs", "pension_balance_snapshots"} & set(inspect(restored_engine).get_table_names())
+    finally:
+        restored_engine.dispose()
+
+
+def test_migration_020_removes_salary_cache_and_rates_preserving_manual_override_and_audit_rows(tmp_path):
+    db_path = str(tmp_path / "pension-cleanup.db")
+    cfg = _cfg(db_path)
+    command.upgrade(cfg, "019pension_foundation")
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as connection:
+            connection.exec_driver_sql("INSERT INTO users (id, email, name) VALUES ('cleanup-user', 'cleanup@example.com', 'Cleanup')")
+            connection.exec_driver_sql("""
+                INSERT INTO salary_config
+                (id, user_id, valid_from, ral, employer_contrib_rate, voluntary_contrib_rate,
+                 regional_tax_rate, municipal_tax_rate, meal_vouchers_annual, welfare_annual,
+                 salary_months, manual_net_override, computed_net_monthly)
+                VALUES ('salary-row', 'cleanup-user', '2026-01-01', 36000, .04, .02, .0173, .001, 0, 0, 12, 1234.56, 0)
+            """)
+            connection.exec_driver_sql("""
+                INSERT INTO assets (id, user_id, year, asset_type, asset_name, manual_override, notes)
+                VALUES ('audit-row', 'cleanup-user', 2026, 'pension', 'Legacy fund', 987.65, 'preserve audit')
+            """)
+        command.upgrade(cfg, "head")
+        command.upgrade(cfg, "head")
+        columns = {column["name"] for column in inspect(engine).get_columns("salary_config")}
+        assert not {"employer_contrib_rate", "voluntary_contrib_rate", "computed_net_monthly"} & columns
+        with engine.connect() as connection:
+            assert connection.exec_driver_sql("SELECT manual_net_override FROM salary_config WHERE id='salary-row'").scalar_one() == 1234.56
+            assert connection.exec_driver_sql("SELECT manual_override, notes FROM assets WHERE id='audit-row'").one() == (987.65, "preserve audit")
+            assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == "020pension_cleanup"
     finally:
         engine.dispose()
 

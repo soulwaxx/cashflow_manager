@@ -93,7 +93,7 @@ services:
 
 ## Upgrading
 
-`deploy/docker-compose.yml` tracks the `latest` GitHub Container Registry (GHCR) image. **Before upgrading to migration 018**, take a consistent SQLite backup using the command below. That migration permanently deletes all saved forecasts, lines, and adjustments; downgrading cannot restore them. Other financial data is unaffected.
+`deploy/docker-compose.yml` tracks the `latest` GitHub Container Registry (GHCR) image. Before any schema-changing upgrade, take a consistent SQLite backup using the command below and review the release notes for migration effects. Migration 018 permanently deletes all saved forecasts, lines, and adjustments; downgrading cannot restore them. For pension storage changes, see the [pension setup and reconciliation guide](pension-guide.md): restoration of a pre-upgrade backup is the rollback path and loses changes made after that backup.
 
 To upgrade, pull the current image and restart:
 

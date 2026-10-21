@@ -38,16 +38,26 @@ export const queryKeys = {
     list: ['salary', 'list'] as const,
     calculations: ['salary', 'calculate'] as const,
     calculate: (params: object) => ['salary', 'calculate', params] as const,
+    breakdown: (asOf: string) => ['salary', 'breakdown', asOf] as const,
+  },
+  pension: {
+    all: ['pension'] as const,
+    configs: ['pension', 'configs'] as const,
+    summary: ['pension', 'summary'] as const,
+    summaryFor: (year: number, asOf: string) => ['pension', 'summary', year, asOf] as const,
+    balances: ['pension', 'balances'] as const,
+    snapshots: (accountId: string) => ['pension', 'snapshots', accountId] as const,
   },
   taxConfig: { all: ['tax-config'] as const },
 };
 
 const dependencies = {
-  tax: [queryKeys.taxConfig.all, queryKeys.salary.calculations],
+  tax: [queryKeys.taxConfig.all, queryKeys.salary.all, queryKeys.salary.calculations, queryKeys.pension.all],
   salary: [queryKeys.salary.all, queryKeys.assets.all, queryKeys.accounts.all],
+  pension: [queryKeys.pension.all, queryKeys.salary.all, queryKeys.assets.all, queryKeys.accounts.all],
   paymentMethod: [queryKeys.paymentMethods.all, queryKeys.summary.all],
   transaction: [queryKeys.transactions.all, queryKeys.summary.all, queryKeys.analytics.categories],
-  transfer: [queryKeys.transfers.all, queryKeys.summary.all, queryKeys.assets.all, queryKeys.analytics.transfers],
+  transfer: [queryKeys.transfers.all, queryKeys.summary.all, queryKeys.assets.all, queryKeys.analytics.transfers, queryKeys.pension.summary, queryKeys.pension.balances],
   category: [queryKeys.categories.all, queryKeys.analytics.categories],
   account: [queryKeys.accounts.all, queryKeys.assets.all, queryKeys.analytics.transfers],
 } satisfies Record<string, readonly QueryKey[]>;
@@ -58,4 +68,10 @@ export function invalidateFor(qc: QueryClient, domain: keyof typeof dependencies
 
 export function invalidateAssetOverride(qc: QueryClient, year: number): void {
   qc.invalidateQueries({ queryKey: queryKeys.assets.year(year) });
+}
+
+export function invalidatePensionValuation(qc: QueryClient): void {
+  for (const queryKey of [queryKeys.pension.all, queryKeys.pension.balances, queryKeys.assets.all, queryKeys.accounts.all]) {
+    qc.invalidateQueries({ queryKey });
+  }
 }

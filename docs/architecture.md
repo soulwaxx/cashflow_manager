@@ -57,9 +57,11 @@ models/      ← SQLAlchemy ORM models
 | `Transaction` | Income, purchase, refund, or card-payment record with occurrence date, derived billing month, and optional recurrence linkage |
 | `Account` | User-owned saving, investment, or pension account with a stable ID and opening balance |
 | `Transfer` | Money movement between stable endpoints; bank endpoints use payment-method IDs and non-bank endpoints use account IDs, with names retained as display snapshots |
-| `Asset` | Annual manual override/notes for computed saving, investment, or pension balances, keyed to a stable account when applicable |
+| `Asset` | Annual manual override/notes for saving and investment balances; pension balances use dated snapshots |
+| `PensionConfig` | Effective-dated employee/employer bases and rates, explicit annual TFR, destination account, and shared credit calendar |
+| `PensionBalanceSnapshot` | User-owned month-end pension reconciliation with source and notes |
 | `Category` | User-defined transaction categories |
-| `SalaryConfig` | Effective-dated gross salary, contribution/tax rates, benefits, and computed monthly net |
+| `SalaryConfig` | Effective-dated gross salary, benefits, and manual net override; pension settings are independent |
 | `TaxConfig` | Effective-dated Italian tax parameters; `user_id=NULL` rows are seeded defaults and user-owned rows are overrides |
 | `MainBankHistory` | Effective-dated main-bank selection and opening-balance reset |
 | `UserSetting` | Per-user key/value settings used for onboarding and tracking start; non-bank opening balances belong to `Account` rows |
@@ -98,7 +100,7 @@ Debit cards, credit cards, and revolving cards require an owned bank `linked_ban
 
 ### Routers (all under `/api/v1`)
 
-`auth`, `onboarding`, `accounts`, `payment_methods`, `categories`, `salary`, `tax_config`, `transactions`, `transfers`, `summary`, `assets`, `analytics`, `user_settings`, `users`
+`auth`, `onboarding`, `accounts`, `payment_methods`, `categories`, `salary`, `pension`, `tax_config`, `transactions`, `transfers`, `summary`, `assets`, `analytics`, `user_settings`, `users`
 
 `GET /auth/config` is a public capabilities endpoint. The sign-in page uses it to decide whether to show password sign-in, single sign-on (SSO), or both.
 
@@ -110,8 +112,9 @@ Debit cards, credit cards, and revolving cards require an owned bank `linked_ban
 | `bank_balance` | Compute running bank balance from transaction history |
 | `billing` | Resolve billing month for credit card transactions |
 | `recurrence` | Generate recurrence instances for a date range |
-| `salary` | Gross-to-net calculation (IRPEF + INPS) |
-| `tax` | Seed and cache Italian tax brackets |
+| `salary` | Gross-to-net calculation (IRPEF + INPS) with the configured ordinary payroll pension-cap treatment |
+| `pension` | Effective pension settings, scheduled employee/employer/TFR credits, cumulative account balances, and dated reconciliation |
+| `tax` | Seed and resolve effective Italian tax configuration |
 | `summary` | Monthly aggregation: income, expenses, categories |
 | `analytics` | Time-series and category breakdown queries |
 | `assets` | Asset value snapshot management |
@@ -119,6 +122,8 @@ Debit cards, credit cards, and revolving cards require an owned bank `linked_ban
 | `oidc` | OIDC discovery, token validation, provider logout |
 
 ---
+
+Pension contributions are scheduled projections, not recorded payments. They do not create salary transactions or transfer rows, and they do not change bank balances or transaction summaries. A pension opening balance is at the start of its selected month; a snapshot is authoritative at that month's end. Pension projections carry across years and include only additional recorded pension transfers after the chosen baseline. See the [pension setup and reconciliation guide](pension-guide.md) for user-facing behavior and migration limits.
 
 ## Frontend (`frontend/src/`)
 

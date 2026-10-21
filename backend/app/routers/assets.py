@@ -49,7 +49,9 @@ def set_override(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    if asset_type not in {"saving", "investment", "pension"}:
+    if asset_type == "pension":
+        raise HTTPException(422, "Annual pension overrides are not supported; use dated pension snapshots")
+    if asset_type not in {"saving", "investment"}:
         raise HTTPException(422, "Unknown asset type")
     account = db.query(Account).filter_by(
         id=account_id, user_id=current_user.id, type=asset_type, is_active=True

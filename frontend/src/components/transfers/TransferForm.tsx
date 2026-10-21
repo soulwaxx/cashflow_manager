@@ -58,6 +58,7 @@ export default function TransferForm({ onSuccess, initial }: Props) {
   const fromType = watch('from_account_type');
   const toType = watch('to_account_type');
   const affectsBank = fromType === 'bank' || toType === 'bank';
+  const affectsPension = fromType === 'pension' || toType === 'pension';
 
   const fromMounted = useRef(false);
   const toMounted = useRef(false);
@@ -129,6 +130,7 @@ export default function TransferForm({ onSuccess, initial }: Props) {
           ? 'This transfer will affect your bank balance.'
           : 'This transfer does not affect your bank balance.'}
       </p>
+      {affectsPension && <p role="note" className="text-xs text-amber-700 dark:text-amber-300">Configured payroll credits are already projected in pension balances; transfers are additional movements. If existing history is duplicated, reconcile the pension to a dated balance.</p>}
       {!isEditing ? (
         <>
           <Select label="From account type" options={ACCOUNT_TYPES} {...register('from_account_type')} />

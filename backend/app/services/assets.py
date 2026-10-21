@@ -8,9 +8,9 @@ from dateutil.relativedelta import relativedelta as _rdelta
 
 from app.models.account import Account
 from app.models.asset import Asset
-from app.models.salary import SalaryConfig
 from app.models.transfer import Transfer
 from app.models.user import UserSetting
+from app.services.pension import pension_balances
 
 
 @dataclass
@@ -21,6 +21,15 @@ class AssetRow:
     manual_override: Optional[float]
     final_amount: float
     account_id: Optional[str] = None
+    valuation_status: Optional[str] = None
+    reconciled_as_of_month: Optional[str] = None
+    reconciled_balance: Optional[float] = None
+    reconciliation_source: Optional[str] = None
+    employee_contributions: Optional[float] = None
+    employer_contributions: Optional[float] = None
+    tfr_contributions: Optional[float] = None
+    net_transfers: Optional[float] = None
+    projected_through: Optional[str] = None
 
 
 def _legacy_accounts(db: Session, user_id: str) -> list[tuple[str, str, Decimal]]:
@@ -75,7 +84,9 @@ def compute_assets(
 
     def _make_row(account: Account | None, asset_type: str, name: str, computed: float):
         account_id = account.id if account is not None else None
-        if account_id is not None and account_id in overrides_by_id:
+        if asset_type == "pension":
+            override = None
+        elif account_id is not None and account_id in overrides_by_id:
             # A stable row is authoritative even when its null override clears
             # a previously migrated name-based override.
             override = overrides_by_id[account_id]
@@ -140,31 +151,24 @@ def compute_assets(
             )
             rows.append(_make_row(None, account_type, name, float(opening_balance + legacy_in - legacy_out)))
 
-    # Pension (employer + voluntary contrib × RAL × months_elapsed / 12)
-    salary_cfgs = (
-        db.query(SalaryConfig)
-        .filter_by(user_id=user_id)
-        .order_by(SalaryConfig.valid_from)
-        .all()
-    )
-    pension_total = Decimal()
-    year_start = f"{year:04d}-01-01"
-    next_year_start = f"{year + 1:04d}-01-01"
-    cutoff_end = (_p(as_of) + _rdelta(months=1)).date().isoformat()
-    for i, sc in enumerate(salary_cfgs):
-        period_start = sc.valid_from
-        period_end = salary_cfgs[i + 1].valid_from if i + 1 < len(salary_cfgs) else next_year_start
-        active_start = max(period_start, year_start)
-        active_end = min(period_end, cutoff_end, next_year_start)
-        if active_start >= active_end:
+    # Pension balances use the shared cumulative calculation, independent of name/year.
+    for balance in pension_balances(db, user_id, as_of):
+        account = accounts_by_id.get(balance.account_id)
+        if account is None:
             continue
-        rd = _rdelta(_p(active_end), _p(active_start))
-        months_active = rd.years * 12 + rd.months + (1 if rd.days >= 15 else 0)
-        ral = Decimal(sc.ral)
-        rate = Decimal(sc.employer_contrib_rate) + Decimal(sc.voluntary_contrib_rate)
-        pension_total += rate * ral * months_active / Decimal(12)
-    if pension_total > 0:
-        pension = accounts_by_name.get(("pension", "Pension"))
-        rows.append(_make_row(pension, "pension", "Pension", float(round(pension_total, 2))))
+        rows.append(AssetRow(
+            asset_type="pension", asset_name=balance.account_name,
+            account_id=balance.account_id, computed_amount=float(balance.balance),
+            manual_override=None, final_amount=float(balance.balance),
+            valuation_status=balance.valuation_status,
+            reconciled_as_of_month=balance.reconciled_as_of_month,
+            reconciled_balance=float(balance.reconciled_balance) if balance.reconciled_balance is not None else None,
+            reconciliation_source=balance.reconciliation_source,
+            employee_contributions=float(balance.employee_contributions),
+            employer_contributions=float(balance.employer_contributions),
+            tfr_contributions=float(balance.tfr_contributions),
+            net_transfers=float(balance.net_transfers),
+            projected_through=balance.projected_through,
+        ))
 
     return rows
