@@ -1,5 +1,10 @@
+from decimal import Decimal
+from types import SimpleNamespace
+
 import pytest
-from app.services.salary import SalaryCalculationError, calculate_salary, SalaryBreakdown
+
+from app.services.pension import PensionComponents, PensionPayrollEffects
+from app.services.salary import SalaryCalculationError, calculate_salary
 
 
 class _Tax:
@@ -23,180 +28,106 @@ class _Tax:
 
 
 class _Salary:
-    ral = 30000.0
-    employer_contrib_rate = 0.02
-    voluntary_contrib_rate = 0.01
-    regional_tax_rate = 0.0173
-    municipal_tax_rate = 0.001
-    meal_vouchers_annual = 1200.0
-    welfare_annual = 0.0
+    ral = Decimal("30000")
+    regional_tax_rate = Decimal("0.0173")
+    municipal_tax_rate = Decimal("0.001")
+    meal_vouchers_annual = Decimal("1200")
+    welfare_annual = Decimal("0")
     salary_months = 12
 
 
-def test_breakdown_uses_english_field_names():
-    result = calculate_salary(_Salary(), _Tax())
-    # New English names must exist
-    assert hasattr(result, "gross_annual")
-    assert hasattr(result, "social_security")
-    assert hasattr(result, "pension_deductible")
-    assert hasattr(result, "taxable_base")
-    assert hasattr(result, "income_tax_gross")
-    assert hasattr(result, "employment_deduction")
-    assert hasattr(result, "income_tax_net")
-    assert hasattr(result, "regional_surtax")
-    assert hasattr(result, "municipal_surtax")
-    assert hasattr(result, "net_annual")
-    assert hasattr(result, "net_monthly")
-    # Old Italian names must NOT exist
-    assert not hasattr(result, "ral")
-    assert not hasattr(result, "inps")
-    assert not hasattr(result, "imponibile")
-    assert not hasattr(result, "irpef_lordo")
-    assert not hasattr(result, "netto_mensile")
+def _salary_values(**overrides):
+    values = {key: value for key, value in _Salary.__dict__.items() if not key.startswith("__")}
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
-def test_salary_months_13_divides_net_annual_by_13():
-    class _Sal13(_Salary):
-        salary_months = 13
-    result = calculate_salary(_Sal13(), _Tax())
-    assert abs(result.net_monthly - result.net_annual / 13) < 0.01
+def _tax_values(**overrides):
+    values = {key: value for key, value in _Tax.__dict__.items() if not key.startswith("__")}
+    values.update(overrides)
+    return SimpleNamespace(**values)
 
 
-def test_salary_months_14_divides_by_14():
-    class _Sal14(_Salary):
-        salary_months = 14
-    result = calculate_salary(_Sal14(), _Tax())
-    assert abs(result.net_monthly - result.net_annual / 14) < 0.01
+def _effects(employee="0", employer="0", tfr="0", cap="5300"):
+    employee, employer, tfr, cap = map(Decimal, (employee, employer, tfr, cap))
+    eligible = employee + employer
+    used = min(eligible, cap)
+    deduction = min(employee, max(cap - employer, Decimal("0")))
+    excess = max(employer - cap, Decimal("0"))
+    return PensionPayrollEffects(
+        PensionComponents(employee, employer, tfr), cap, used,
+        max(eligible - cap, Decimal("0")), deduction, excess,
+        "tax-id", "2026-01-01",
+    )
 
 
-def test_meal_vouchers_always_divide_by_12_regardless_of_salary_months():
-    class _Sal13(_Salary):
-        salary_months = 13
-    result = calculate_salary(_Sal13(), _Tax())
-    assert abs(result.meal_vouchers_monthly - 1200.0 / 12) < 0.01
+def test_salary_breakdown_exposes_explicit_pension_effects_not_ambiguous_field():
+    result = calculate_salary(_Salary(), _Tax(), _effects("300", "600", "2400"))
+    assert result.gross_annual == 30000
+    assert result.employee_pension_contribution_annual == 300
+    assert result.employer_pension_contribution_annual == 600
+    assert result.tfr_contribution_annual == 2400
+    assert result.pension_payroll_deduction_annual == 300
+    assert result.pension_cap_used_annual == 900
+    assert result.tax_config_valid_from == "2026-01-01"
+    assert not hasattr(result, "pension_deductible")
 
 
-def test_employment_deduction_floor_applied_near_50k():
-    """Near €50k taxable base the formula gives less than €690; floor must kick in.
-
-    At ral=52000, taxable base ≈ 52000 - (52000*0.0919) - (52000*0.03) = ~46,600
-    which lands in band 3 where formula = 1910*(50000-46600)/22000 ≈ 295 < 690.
-    The floor must push it back to 690.
-    """
-    class _NearCeilingSalary(_Salary):
-        ral = 52000.0
-    result = calculate_salary(_NearCeilingSalary(), _Tax())
-    assert result.employment_deduction > 0, "expected positive deduction for this income level"
-    assert result.employment_deduction >= 690.0
+def test_net_payment_average_tracks_salary_month_count():
+    result12 = calculate_salary(_Salary(), _Tax(), _effects())
+    result13 = calculate_salary(_salary_values(salary_months=13), _Tax(), _effects())
+    result14 = calculate_salary(_salary_values(salary_months=14), _Tax(), _effects())
+    assert result12.computed_net_monthly > result13.computed_net_monthly > result14.computed_net_monthly
+    assert result13.salary_months == 13
+    assert result14.salary_months == 14
 
 
-def test_employment_deduction_zero_above_50k():
-    """Above €50k taxable base the deduction is zero — floor does NOT create a deduction."""
-    class _VeryHighSalary(_Salary):
-        ral = 80000.0
-    result = calculate_salary(_VeryHighSalary(), _Tax())
-    assert result.employment_deduction == 0.0
+def test_meal_vouchers_always_divide_by_12():
+    salary = _salary_values(salary_months=13)
+    assert calculate_salary(salary, _Tax(), _effects()).meal_vouchers_monthly == 100
 
 
-def test_pension_deductible_capped():
-    class _HighPension(_Salary):
-        employer_contrib_rate = 0.10
-        voluntary_contrib_rate = 0.10
-        ral = 60000.0
-    result = calculate_salary(_HighPension(), _Tax())
-    assert result.pension_deductible == pytest.approx(5300.0)
+def test_employer_only_excess_increases_taxable_base_without_cash_deduction():
+    effects = _effects("0", "6000", "2400")
+    result = calculate_salary(_Salary(), _Tax(), effects)
+    assert result.pension_payroll_deduction_annual == 0
+    assert result.pension_employer_taxable_excess_annual == 700
+    assert result.taxable_base == pytest.approx(30000 + 6000 - 2757 - 5300)
+    assert result.tfr_contribution_annual == 2400
 
 
-def test_calculation_uses_decimal_golden_values():
-    """Independent hand calculation for the standard 2026 tax table."""
-    result = calculate_salary(_Salary(), _Tax())
-
-    assert result.social_security == 2757.00
-    assert result.pension_deductible == 900.00
-    assert result.income_tax_gross == 6058.89
-    assert result.net_monthly == 1871.98
+def test_employment_deduction_floor_and_ceiling_are_preserved():
+    near = _salary_values(ral=52000)
+    high = _salary_values(ral=80000)
+    assert calculate_salary(near, _Tax(), _effects()).employment_deduction >= 690
+    assert calculate_salary(high, _Tax(), _effects()).employment_deduction == 0
 
 
-def test_legacy_invalid_tax_config_raises_controlled_error():
-    class _UnsafeTax(_Tax):
-        employment_deduction_band2_range = 0
+def test_raw_fractional_cent_pension_input_is_rounded_only_for_final_outputs():
+    salary = _salary_values(ral=Decimal("10000"), regional_tax_rate=Decimal("0"),
+                            municipal_tax_rate=Decimal("0"))
+    tax = _tax_values(
+        inps_rate=Decimal("0"), irpef_band1_rate=Decimal("0.23"),
+        employment_deduction_band1_limit=Decimal("1"),
+        employment_deduction_band2_limit=Decimal("2"),
+        employment_deduction_band3_limit=Decimal("3"),
+        employment_deduction_band1_amount=Decimal("0"),
+        employment_deduction_floor=Decimal("0"),
+    )
+    effects = _effects("0.015", "0")
+    result = calculate_salary(salary, tax, effects)
+    assert result.employee_pension_contribution_annual == 0.02
+    assert result.net_annual == 7699.99
 
+
+def test_invalid_tax_config_raises_controlled_error():
+    unsafe = SimpleNamespace(**{**_Tax.__dict__, "employment_deduction_band2_range": 0})
     with pytest.raises(SalaryCalculationError, match="ranges must be positive"):
-        calculate_salary(_Salary(), _UnsafeTax())
+        calculate_salary(_Salary(), unsafe, _effects())
 
 
-def test_contributions_cannot_produce_negative_taxable_base():
-    class _ExcessiveContributions(_Salary):
-        ral = 100
-        employer_contrib_rate = 1
-        voluntary_contrib_rate = 1
-        regional_tax_rate = 1
-        municipal_tax_rate = 1
-
-    with pytest.raises(SalaryCalculationError, match="contributions must not exceed"):
-        calculate_salary(_ExcessiveContributions(), _Tax())
-
-
-def test_capped_pension_deduction_that_produces_negative_net_raises():
-    class _FullVoluntaryContribution(_Salary):
-        ral = 36000
-        employer_contrib_rate = 0
-        voluntary_contrib_rate = 1
-        regional_tax_rate = 0
-        municipal_tax_rate = 0
-
-    with pytest.raises(SalaryCalculationError, match="Computed net annual salary"):
-        calculate_salary(_FullVoluntaryContribution(), _Tax())
-
-
-def test_zero_taxable_base_is_allowed_at_contribution_boundary():
-    class _BoundaryContributions(_Salary):
-        ral = 100
-        employer_contrib_rate = 0.9081
-        voluntary_contrib_rate = 0
-
-    result = calculate_salary(_BoundaryContributions(), _Tax())
-
-    assert result.taxable_base == 0
-    assert result.regional_surtax == 0
-    assert result.municipal_surtax == 0
-
-
-def test_net_monthly_is_rounded_to_2dp():
-    """net_monthly must be rounded to 2 decimal places."""
-    from app.services.salary import calculate_salary
-    from unittest.mock import MagicMock
-
-    salary_cfg = MagicMock()
-    salary_cfg.ral = 36000
-    salary_cfg.employer_contrib_rate = 0.0693
-    salary_cfg.voluntary_contrib_rate = 0.02
-    salary_cfg.regional_tax_rate = 0.0123
-    salary_cfg.municipal_tax_rate = 0.008
-    salary_cfg.salary_months = 13   # forces non-terminating division
-    salary_cfg.meal_vouchers_annual = 0
-    salary_cfg.welfare_annual = 0
-
-    tax_cfg = MagicMock()
-    tax_cfg.inps_rate = 0.0919
-    tax_cfg.irpef_band1_rate = 0.23
-    tax_cfg.irpef_band1_limit = 28000
-    tax_cfg.irpef_band2_rate = 0.33
-    tax_cfg.irpef_band2_limit = 50000
-    tax_cfg.irpef_band3_rate = 0.43
-    tax_cfg.pension_deductibility_cap = 5300
-    tax_cfg.employment_deduction_band1_limit = 15000
-    tax_cfg.employment_deduction_band1_amount = 1955
-    tax_cfg.employment_deduction_band2_limit = 28000
-    tax_cfg.employment_deduction_band2_base = 1910
-    tax_cfg.employment_deduction_band2_variable = 1190
-    tax_cfg.employment_deduction_band2_range = 13000
-    tax_cfg.employment_deduction_band3_limit = 50000
-    tax_cfg.employment_deduction_band3_base = 1910
-    tax_cfg.employment_deduction_band3_range = 22000
-    tax_cfg.employment_deduction_floor = 690
-
-    result = calculate_salary(salary_cfg, tax_cfg)
-    # Must have exactly 2 decimal places (no trailing float noise)
-    assert result.net_monthly == round(result.net_monthly, 2)
-    assert len(str(result.net_monthly).split(".")[-1]) <= 2
+def test_salary_without_explicit_pension_has_no_implicit_contribution():
+    result = calculate_salary(_Salary(), _Tax())
+    assert result.employee_pension_contribution_annual == 0
+    assert result.employer_pension_contribution_annual == 0
+    assert result.pension_cap_used_annual == 0

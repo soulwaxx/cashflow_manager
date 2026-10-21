@@ -26,13 +26,14 @@ export default function StepReview() {
     <div className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">Review & confirm</h2>
       <div className="text-sm text-secondary space-y-2 bg-subtle border border-line rounded-xl p-4 break-words">
-        <div><strong>Start date:</strong> {data.tracking_start_date ?? '—'}</div>
+        <div><strong>Tracking/effective month:</strong> {data.tracking_start_date ?? '—'}</div>
         <div><strong>Main bank:</strong> {data.main_bank?.name ?? '—'} (€{data.main_bank?.opening_balance?.toFixed(2) ?? '0.00'})</div>
         <div><strong>Additional banks:</strong> {data.additional_banks?.length ?? 0}</div>
         <div><strong>Payment methods:</strong> {data.payment_methods?.length ?? 0}</div>
         <div><strong>Saving accounts:</strong> {data.saving_accounts?.length ?? 0}</div>
         <div><strong>Investment accounts:</strong> {data.investment_accounts?.length ?? 0}</div>
-        {data.salary && <div><strong>RAL:</strong> €{data.salary.ral.toLocaleString()}</div>}
+        {data.salary ? <div><strong>Salary:</strong> RAL €{data.salary.ral.toLocaleString()} · {data.salary.salary_months} payments/year</div> : <div><strong>Salary:</strong> not configured</div>}
+        {data.pension ? <div><strong>Pension:</strong> {data.pension.name} · opening €{data.pension.opening_balance.toLocaleString()} at {data.pension.opening_balance_month} · effective from {data.tracking_start_date}</div> : <div><strong>Pension:</strong> not configured</div>}
       </div>
       {error && <div role="alert" className="text-sm text-red-600">{error}</div>}
       <div className="flex flex-wrap gap-2">

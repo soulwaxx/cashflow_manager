@@ -225,15 +225,13 @@ def test_tax_config_does_not_leak_across_users(client):
     r = client.post("/api/v1/salary", json={
         "valid_from": "2026-07-01",
         "ral": 36000,
-        "employer_contrib_rate": 0.04,
-        "voluntary_contrib_rate": 0.0,
         "regional_tax_rate": 0.0173,
         "municipal_tax_rate": 0.001,
         "salary_months": 12,
         "meal_vouchers_annual": 0,
         "welfare_annual": 0,
     })
-    assert r.status_code == 200
+    assert r.status_code == 201
     net = float(r.json().get("computed_net_monthly", 0))
     # With IRPEF at 99%, net would be essentially 0 (or negative). For RAL=36000, normal net is ~1700–2200.
     assert net > 500, f"B's salary computed with A's absurd 99% IRPEF rate: net={net}"
@@ -276,11 +274,9 @@ def _alice_salary(client):
     client.post("/api/v1/tax-config", json={"valid_from": "2026-01-01"})
     # Tax config creation may already exist from seed — ignore 409
     r = client.post("/api/v1/salary", json={
-        "valid_from": "2026-01-01",
-        "ral": 40000,
-        "employer_contrib_rate": 0.0919,
+        "valid_from": "2026-01-01", "ral": 40000,
     })
-    assert r.status_code == 200
+    assert r.status_code == 201
     return r.json()["id"]
 
 
@@ -299,7 +295,7 @@ def test_salary_update_by_other_user_returns_404(client):
     salary_id = _alice_salary(client)
     _switch_to_bob(client)
     r = client.put(f"/api/v1/salary/{salary_id}", json={
-        "valid_from": "2026-01-01", "ral": 99999, "employer_contrib_rate": 0.0
+        "valid_from": "2026-01-01", "ral": 99999
     })
     assert r.status_code == 404
 

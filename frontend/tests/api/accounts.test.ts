@@ -5,7 +5,7 @@ import type { AccountCreate } from '../../src/types/api';
 import { server } from '../mocks/server';
 
 describe('accountsApi', () => {
-  it('creates a saving or investment account with the backend request contract', async () => {
+  it('creates an account with the backend request contract', async () => {
     const request: AccountCreate = {
       type: 'saving',
       name: 'Emergency fund',
@@ -23,9 +23,12 @@ describe('accountsApi', () => {
     await expect(accountsApi.create(request)).resolves.toMatchObject(request);
   });
 
-  it('keeps pension out of the create request type', () => {
-    // @ts-expect-error Pension accounts are created only from salary contributions.
-    const pensionRequest: AccountCreate = { type: 'pension', name: 'Pension' };
-    void pensionRequest;
+  it('creates a pension account with its required opening month', async () => {
+    const request: AccountCreate = { type: 'pension', name: 'Work fund', opening_balance: 0, opening_balance_month: '2026-01-01' };
+    server.use(http.post('/api/v1/accounts', async ({ request: httpRequest }) => {
+      expect(await httpRequest.json()).toEqual(request);
+      return HttpResponse.json({ id: 'pension-1', user_id: 'user-1', ...request, is_active: true });
+    }));
+    await expect(accountsApi.create(request)).resolves.toMatchObject(request);
   });
 });

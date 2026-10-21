@@ -12,12 +12,21 @@ WIZARD_PAYLOAD = {
     "investment_accounts": [{"name": "MyBroker", "opening_balance": 8000.00}],
     "salary": {
         "ral": 42000,
-        "employer_contrib_rate": 0.04,
-        "voluntary_contrib_rate": 0.02,
         "regional_tax_rate": 0.0173,
         "municipal_tax_rate": 0.008,
         "meal_vouchers_annual": 1200,
         "welfare_annual": 500,
+    },
+    "pension": {
+        "name": "Pension Fund",
+        "opening_balance": 0,
+        "opening_balance_month": "2026-01-01",
+        "employee_contrib_rate": 0.02,
+        "employee_contrib_annual_base": 42000,
+        "employer_contrib_rate": 0.04,
+        "employer_contrib_annual_base": 42000,
+        "tfr_contrib_annual": 0,
+        "contribution_periods_by_month": [1] * 12,
     },
 }
 
@@ -135,7 +144,7 @@ def test_onboarding_creates_stable_nonbank_accounts(client, db):
     accounts = {(account.type, account.name): float(account.opening_balance) for account in db.query(Account).all()}
     assert accounts[("saving", "MySavings")] == 3000.0
     assert accounts[("investment", "MyBroker")] == 8000.0
-    assert accounts[("pension", "Pension")] == 0.0
+    assert accounts[("pension", "Pension Fund")] == 0.0
 
 def test_onboarding_seeds_default_categories(client, db):
     client.post("/api/v1/auth/register", json={
@@ -253,6 +262,90 @@ def test_onboarding_rejects_malformed_nested_payloads(client, db, payload):
     assert client.get("/api/v1/onboarding/status").json()["complete"] is False
 
 
+@pytest.mark.parametrize(
+    "calendar",
+    [
+        pytest.param([True] + [1] * 11, id="boolean-is-not-integer"),
+        pytest.param([1.0] + [1] * 11, id="float-is-not-integer"),
+        pytest.param(["1"] + [1] * 11, id="string-is-not-integer"),
+        pytest.param([-1] + [1] * 11, id="negative-weight"),
+        pytest.param([0] * 12, id="zero-sum"),
+        pytest.param([1] * 11, id="invalid-length"),
+    ],
+)
+def test_onboarding_rejects_strict_invalid_pension_calendars_without_writes(client, db, calendar):
+    from app.models.account import Account
+    from app.models.category import Category
+    from app.models.payment_method import MainBankHistory, PaymentMethod
+    from app.models.pension import PensionConfig
+    from app.models.salary import SalaryConfig
+    from app.models.user import UserSetting
+
+    client.post("/api/v1/auth/register", json={
+        "email": "strict-calendar@example.com", "password": "Password1!", "name": "Strict calendar",
+    })
+    payload = {**WIZARD_PAYLOAD, "pension": {
+        **WIZARD_PAYLOAD["pension"], "contribution_periods_by_month": calendar,
+    }}
+    response = client.post("/api/v1/onboarding", json=payload)
+    assert response.status_code == 422
+    assert db.query(UserSetting).count() == 0
+    assert db.query(PaymentMethod).count() == 0
+    assert db.query(MainBankHistory).count() == 0
+    assert db.query(Category).count() == 0
+    assert db.query(Account).count() == 0
+    assert db.query(PensionConfig).count() == 0
+    assert db.query(SalaryConfig).count() == 0
+    assert client.get("/api/v1/onboarding/status").json() == {"complete": False}
+
+
+def test_onboarding_accepts_strict_valid_pension_calendar(client, db):
+    from app.models.pension import PensionConfig
+
+    client.post("/api/v1/auth/register", json={
+        "email": "strict-calendar-valid@example.com", "password": "Password1!", "name": "Strict calendar",
+    })
+    calendar = [0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6]
+    payload = {**WIZARD_PAYLOAD, "pension": {
+        **WIZARD_PAYLOAD["pension"], "contribution_periods_by_month": calendar,
+    }}
+    response = client.post("/api/v1/onboarding", json=payload)
+    assert response.status_code == 200, response.text
+    assert db.query(PensionConfig).one().contribution_periods_by_month == calendar
+
+
+def test_onboarding_rejects_retired_salary_pension_fields_without_partial_setup(client, db):
+    from app.models.account import Account
+    from app.models.category import Category
+    from app.models.payment_method import MainBankHistory, PaymentMethod
+    from app.models.pension import PensionConfig
+    from app.models.salary import SalaryConfig
+    from app.models.user import User, UserSetting
+
+    client.post("/api/v1/auth/register", json={
+        "email": "retired-salary-field@example.com", "password": "Password1!", "name": "Retired fields",
+    })
+    user = db.query(User).filter_by(email="retired-salary-field@example.com").one()
+    db.add(UserSetting(user_id=user.id, key="tracking_start_date", value="2025-01-01"))
+    db.commit()
+    payload = {**WIZARD_PAYLOAD, "salary": {
+        **WIZARD_PAYLOAD["salary"], "employer_contrib_rate": 0.04,
+        "voluntary_contrib_rate": 0.02,
+    }}
+    response = client.post("/api/v1/onboarding", json=payload)
+    assert response.status_code == 422
+    setting = db.query(UserSetting).filter_by(user_id=user.id, key="tracking_start_date").one()
+    assert setting.value == "2025-01-01"
+    assert db.query(UserSetting).filter_by(user_id=user.id).count() == 1
+    assert db.query(PaymentMethod).count() == 0
+    assert db.query(MainBankHistory).count() == 0
+    assert db.query(Category).count() == 0
+    assert db.query(Account).count() == 0
+    assert db.query(SalaryConfig).count() == 0
+    assert db.query(PensionConfig).count() == 0
+    assert client.get("/api/v1/onboarding/status").json() == {"complete": False}
+
+
 def test_onboarding_salary_months_stored(client):
     client.post("/api/v1/auth/register", json={
         "email": "bob@example.com", "password": "Password1!", "name": "Bob"
@@ -262,8 +355,6 @@ def test_onboarding_salary_months_stored(client):
         "main_bank": {"name": "MyBank", "opening_balance": 5000},
         "salary": {
             "ral": 42000,
-            "employer_contrib_rate": 0.04,
-            "voluntary_contrib_rate": 0.0,
             "regional_tax_rate": 0.0173,
             "municipal_tax_rate": 0.001,
             "meal_vouchers_annual": 0,
@@ -348,10 +439,15 @@ def test_onboarding_rejects_negative_taxable_base_without_partial_persistence(cl
         "salary": {
             **WIZARD_PAYLOAD["salary"],
             "ral": 100,
-            "employer_contrib_rate": 1,
-            "voluntary_contrib_rate": 1,
             "regional_tax_rate": 1,
             "municipal_tax_rate": 1,
+        },
+        "pension": {
+            **WIZARD_PAYLOAD["pension"],
+            "employee_contrib_rate": 1,
+            "employee_contrib_annual_base": 10000,
+            "employer_contrib_rate": 0,
+            "employer_contrib_annual_base": 0,
         },
     }
 
@@ -382,10 +478,15 @@ def test_onboarding_rejects_capped_deduction_negative_net_without_partial_persis
         "salary": {
             **WIZARD_PAYLOAD["salary"],
             "ral": 36000,
-            "employer_contrib_rate": 0,
-            "voluntary_contrib_rate": 1,
             "regional_tax_rate": 0,
             "municipal_tax_rate": 0,
+        },
+        "pension": {
+            **WIZARD_PAYLOAD["pension"],
+            "employee_contrib_rate": 1,
+            "employee_contrib_annual_base": 50000,
+            "employer_contrib_rate": 0,
+            "employer_contrib_annual_base": 0,
         },
     }
 

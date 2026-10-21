@@ -62,8 +62,9 @@ def create_app() -> FastAPI:
     app.include_router(accounts_router.router, prefix="/api/v1")
     app.include_router(pm_router.router, prefix="/api/v1")
     app.include_router(cat_router.router, prefix="/api/v1")
-    from app.routers import salary as salary_router, tax_config as tax_router
+    from app.routers import salary as salary_router, tax_config as tax_router, pension as pension_router
     app.include_router(salary_router.router, prefix="/api/v1")
+    app.include_router(pension_router.router, prefix="/api/v1")
     app.include_router(tax_router.router, prefix="/api/v1")
     from app.routers import transactions as tx_router
     app.include_router(tx_router.router, prefix="/api/v1")

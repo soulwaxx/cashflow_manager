@@ -65,6 +65,14 @@ def test_manual_override_replaces_computed(client):
     assert caab["final_amount"] == pytest.approx(9999.0)
     assert caab["computed_amount"] == pytest.approx(3000.0)
 
+def test_annual_pension_override_is_rejected_in_favor_of_dated_snapshot(client):
+    _setup(client)
+    pension = next(account for account in client.get("/api/v1/accounts").json() if account["type"] == "pension")
+    response = client.put(f"/api/v1/assets/2026/pension/{pension['id']}", json={"manual_override": 5000})
+    assert response.status_code == 422
+    assert "dated pension snapshots" in response.json()["detail"]
+
+
 def test_final_amount_falls_back_to_computed_without_override(client):
     _setup(client)
     r = client.get("/api/v1/assets/2026?as_of=2026-12-01")
@@ -98,88 +106,20 @@ def test_stable_asset_override_can_clear_matching_legacy_override(client, db):
     assert saving["final_amount"] == saving["computed_amount"] == pytest.approx(3000.0)
 
 
-def test_pension_month_count_uses_relativedelta(_standalone_db, make_user):
-    """Pension months must be counted correctly across year boundaries."""
+def test_assets_omit_pension_before_opening_month_and_include_zero_opening(_standalone_db, make_user):
+    from app.models.account import Account
     from app.services.assets import compute_assets
-    from app.models.salary import SalaryConfig
-    from app.models.user import UserSetting
 
-    user = make_user(email="pension@test.com")
+    user = make_user(email="pension_opening@test.com")
     db = _standalone_db
-
-    # Salary valid from 2025-07-01 — contributes for 6 months of 2025
-    db.add(SalaryConfig(
-        user_id=user.id, valid_from="2025-07-01", ral=36000,
-        employer_contrib_rate=0.0693, voluntary_contrib_rate=0.02,
-        regional_tax_rate=0.0123, municipal_tax_rate=0.008,
-        meal_vouchers_annual=0, welfare_annual=0,
-        salary_months=12, computed_net_monthly=0,
-    ))
-    db.add(UserSetting(user_id=user.id, key="tracking_start_date", value="2025-01-01"))
+    db.add(Account(user_id=user.id, type="pension", name="Future Fund", opening_balance=100,
+                   opening_balance_month="2026-03-01"))
     db.commit()
+    assert not any(row.asset_type == "pension" for row in compute_assets(user.id, 2026, db, "2026-02-01"))
+    row = next(row for row in compute_assets(user.id, 2026, db, "2026-03-01") if row.asset_type == "pension")
+    assert row.computed_amount == 100
+    assert row.valuation_status == "estimated"
 
-    rows = compute_assets(user.id, 2025, db)
-    pension_rows = [r for r in rows if r.asset_type == "pension"]
-    assert len(pension_rows) == 1
-    # 6 months (Jul–Dec), rate=0.0693+0.02=0.0893, ral=36000
-    expected = round(0.0893 * 36000 * 6 / 12, 2)
-    assert abs(pension_rows[0].computed_amount - expected) < 0.01
-
-
-def test_pension_fractional_month_rounds_up_at_15_days(_standalone_db, make_user):
-    """A period with >= 15 leftover days must round up to the next whole month."""
-    from app.services.assets import compute_assets
-    from app.models.salary import SalaryConfig
-    from app.models.user import UserSetting
-
-    user = make_user(email="pension_round_up@test.com")
-    db = _standalone_db
-
-    # valid_from=2026-01-16 → active 2026-01-16..2027-01-01 = 11 months 16 days → rounds to 12
-    db.add(SalaryConfig(
-        user_id=user.id, valid_from="2026-01-16", ral=12000,
-        employer_contrib_rate=0.10, voluntary_contrib_rate=0.0,
-        regional_tax_rate=0.0, municipal_tax_rate=0.0,
-        meal_vouchers_annual=0, welfare_annual=0,
-        salary_months=12, computed_net_monthly=0,
-    ))
-    db.add(UserSetting(user_id=user.id, key="tracking_start_date", value="2026-01-01"))
-    db.commit()
-
-    rows = compute_assets(user.id, 2026, db)
-    pension_rows = [r for r in rows if r.asset_type == "pension"]
-    assert len(pension_rows) == 1
-    # 12 months (rounded up from 11m16d), rate=0.10, ral=12000
-    expected = round(0.10 * 12000 * 12 / 12, 2)
-    assert abs(pension_rows[0].computed_amount - expected) < 0.01
-
-
-def test_pension_fractional_month_drops_below_15_days(_standalone_db, make_user):
-    """A period with < 15 leftover days must NOT round up."""
-    from app.services.assets import compute_assets
-    from app.models.salary import SalaryConfig
-    from app.models.user import UserSetting
-
-    user = make_user(email="pension_no_round@test.com")
-    db = _standalone_db
-
-    # valid_from=2026-01-18 → active 2026-01-18..2027-01-01 = 11 months 14 days → stays 11
-    db.add(SalaryConfig(
-        user_id=user.id, valid_from="2026-01-18", ral=12000,
-        employer_contrib_rate=0.10, voluntary_contrib_rate=0.0,
-        regional_tax_rate=0.0, municipal_tax_rate=0.0,
-        meal_vouchers_annual=0, welfare_annual=0,
-        salary_months=12, computed_net_monthly=0,
-    ))
-    db.add(UserSetting(user_id=user.id, key="tracking_start_date", value="2026-01-01"))
-    db.commit()
-
-    rows = compute_assets(user.id, 2026, db)
-    pension_rows = [r for r in rows if r.asset_type == "pension"]
-    assert len(pension_rows) == 1
-    # 11 months (14 leftover days < 15 threshold), rate=0.10, ral=12000
-    expected = round(0.10 * 12000 * 11 / 12, 2)
-    assert abs(pension_rows[0].computed_amount - expected) < 0.01
 
 
 def test_assets_transfer_balance_multiple_accounts(_standalone_db, make_user):
@@ -381,40 +321,34 @@ def test_assets_january_snapshot_excludes_later_transfers_and_pension(client):
     assert december_pension["computed_amount"] == pytest.approx(2520.0)
 
 
-def test_assets_pension_uses_salary_config_effective_periods(_standalone_db, make_user):
-    from app.models.salary import SalaryConfig
+def test_assets_pension_uses_effective_pension_configs_and_cross_year_history(_standalone_db, make_user):
+    from app.models.account import Account
+    from app.models.pension import PensionConfig
     from app.services.assets import compute_assets
 
-    user = make_user(email="asset-salary-period@test.com")
+    user = make_user(email="asset-pension-period@test.com")
     db = _standalone_db
+    account = Account(user_id=user.id, type="pension", name="Renamed Fund", opening_balance=1000,
+                      opening_balance_month="2025-01-01")
+    db.add(account)
+    db.flush()
     db.add_all([
-        SalaryConfig(
-            user_id=user.id, valid_from="2026-01-01", ral=12000,
-            employer_contrib_rate=0.10, voluntary_contrib_rate=0,
-            regional_tax_rate=0, municipal_tax_rate=0,
-            meal_vouchers_annual=0, welfare_annual=0,
-            salary_months=12, computed_net_monthly=0,
-        ),
-        SalaryConfig(
-            user_id=user.id, valid_from="2026-03-01", ral=24000,
-            employer_contrib_rate=0.10, voluntary_contrib_rate=0,
-            regional_tax_rate=0, municipal_tax_rate=0,
-            meal_vouchers_annual=0, welfare_annual=0,
-            salary_months=12, computed_net_monthly=0,
-        ),
+        PensionConfig(user_id=user.id, account_id=account.id, valid_from="2025-01-01",
+                      employee_contrib_rate=0, employee_contrib_annual_base=0,
+                      employer_contrib_rate=0.1, employer_contrib_annual_base=12000,
+                      tfr_contrib_annual=0, contribution_periods_by_month=[1] * 12),
+        PensionConfig(user_id=user.id, account_id=account.id, valid_from="2026-03-01",
+                      employee_contrib_rate=0, employee_contrib_annual_base=0,
+                      employer_contrib_rate=0.1, employer_contrib_annual_base=24000,
+                      tfr_contrib_annual=0, contribution_periods_by_month=[1] * 12),
     ])
     db.commit()
 
-    february = next(
-        row for row in compute_assets(user.id, 2026, db, "2026-02-01")
-        if row.asset_type == "pension"
-    )
-    march = next(
-        row for row in compute_assets(user.id, 2026, db, "2026-03-01")
-        if row.asset_type == "pension"
-    )
-    assert february.computed_amount == pytest.approx(200.0)
-    assert march.computed_amount == pytest.approx(400.0)
+    february = next(row for row in compute_assets(user.id, 2026, db, "2026-02-01") if row.asset_type == "pension")
+    march = next(row for row in compute_assets(user.id, 2026, db, "2026-03-01") if row.asset_type == "pension")
+    assert february.computed_amount == pytest.approx(2400.0)
+    assert march.computed_amount == pytest.approx(2600.0)
+    assert march.account_id == account.id
 
 
 def test_assets_december_as_of_matches_annual_service_behavior(_standalone_db, make_user):
@@ -433,10 +367,8 @@ def test_assets_december_as_of_matches_annual_service_behavior(_standalone_db, m
     ))
     db.add(SalaryConfig(
         user_id=user.id, valid_from="2026-01-01", ral=12000,
-        employer_contrib_rate=0.10, voluntary_contrib_rate=0,
         regional_tax_rate=0, municipal_tax_rate=0,
-        meal_vouchers_annual=0, welfare_annual=0,
-        salary_months=12, computed_net_monthly=0,
+        meal_vouchers_annual=0, welfare_annual=0, salary_months=12,
     ))
     db.commit()
 

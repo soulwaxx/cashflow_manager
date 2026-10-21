@@ -5,7 +5,7 @@ import re
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 from app.schemas.payment_method import BANK_FUNDED_CARD_TYPES, PaymentMethodType
 
@@ -55,15 +55,44 @@ class InvestmentAccountIn(_NamedInput):
 
 
 class SalaryIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     ral: Decimal = Field(gt=0, max_digits=12, decimal_places=2)
-    employer_contrib_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
-    voluntary_contrib_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
     regional_tax_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
     municipal_tax_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
     meal_vouchers_annual: Decimal = Field(Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     welfare_annual: Decimal = Field(Decimal("0"), ge=0, max_digits=10, decimal_places=2)
     salary_months: Literal[12, 13, 14] = 12
     manual_net_override: Optional[Decimal] = Field(None, ge=0, max_digits=10, decimal_places=2)
+
+
+class PensionIn(_NamedInput):
+    opening_balance: Decimal = Field(ge=0, max_digits=12, decimal_places=2)
+    opening_balance_month: str
+    employee_contrib_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
+    employee_contrib_annual_base: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=2)
+    employer_contrib_rate: Decimal = Field(Decimal("0"), ge=0, le=1, max_digits=6, decimal_places=4)
+    employer_contrib_annual_base: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=2)
+    tfr_contrib_annual: Decimal = Field(Decimal("0"), ge=0, max_digits=12, decimal_places=2)
+    contribution_periods_by_month: list[StrictInt] = Field(default_factory=lambda: [1] * 12, min_length=12, max_length=12)
+
+    @field_validator("opening_balance_month")
+    @classmethod
+    def validate_opening_month(cls, value: str) -> str:
+        try:
+            parsed = datetime.date.fromisoformat(value)
+        except ValueError:
+            raise ValueError("Opening balance month must be YYYY-MM-01") from None
+        if parsed.isoformat() != value or parsed.day != 1:
+            raise ValueError("Opening balance month must be YYYY-MM-01")
+        return value
+
+    @field_validator("contribution_periods_by_month")
+    @classmethod
+    def validate_calendar(cls, value: list[StrictInt]) -> list[StrictInt]:
+        if any(type(weight) is not int or weight < 0 for weight in value) or sum(value) <= 0:
+            raise ValueError("Contribution calendar needs twelve nonnegative weights with a positive sum")
+        return value
 
 
 class OnboardingPayload(BaseModel):
@@ -74,6 +103,7 @@ class OnboardingPayload(BaseModel):
     saving_accounts: list[SavingAccountIn] = Field(default_factory=list)
     investment_accounts: list[InvestmentAccountIn] = Field(default_factory=list)
     salary: Optional[SalaryIn] = None
+    pension: Optional[PensionIn] = None
 
     @field_validator("tracking_start_date")
     @classmethod

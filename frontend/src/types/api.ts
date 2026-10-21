@@ -67,13 +67,15 @@ export interface Account {
   type: 'saving' | 'investment' | 'pension';
   name: string;
   opening_balance: number;
+  opening_balance_month?: string | null;
   is_active: boolean;
 }
 
 export interface AccountCreate {
-  type: 'saving' | 'investment';
+  type: 'saving' | 'investment' | 'pension';
   name: string;
   opening_balance?: number;
+  opening_balance_month?: string;
 }
 
 export interface Transfer {
@@ -117,30 +119,94 @@ export interface Asset {
   computed_amount: number;
   manual_override: number | null;
   final_amount: number;
+  valuation_status?: 'estimated' | 'statement_reconciled' | 'manual_reconciled' | 'legacy_reconciled' | null;
+  reconciled_as_of_month?: string | null;
+  reconciled_balance?: number | null;
+  reconciliation_source?: 'statement' | 'manual' | 'legacy_override' | null;
+  employee_contributions?: number | null;
+  employer_contributions?: number | null;
+  tfr_contributions?: number | null;
+  net_transfers?: number | null;
+  projected_through?: string | null;
+}
+
+export interface PensionSnapshot {
+  id: string;
+  user_id: string;
+  account_id: string;
+  as_of_month: string;
+  balance: number;
+  source: 'statement' | 'manual' | 'legacy_override';
+  notes: string | null;
+}
+
+export interface PensionSnapshotInput {
+  account_id: string;
+  as_of_month: string;
+  balance: number;
+  source: 'statement' | 'manual';
+  notes: string | null;
+}
+
+export interface PensionOpeningBalanceUpdate {
+  amount: number;
+  month: string;
 }
 
 // Salary
-export interface SalaryConfig {
-  id: string;
-  user_id: string;
-  valid_from: string;
+export interface SalaryFields {
   ral: number;
-  employer_contrib_rate: number;
-  voluntary_contrib_rate: number;
   regional_tax_rate: number;
   municipal_tax_rate: number;
   meal_vouchers_annual: number;
   welfare_annual: number;
-  salary_months: number;
+  salary_months: 12 | 13 | 14;
+}
+
+export interface PensionPayrollInputs {
+  employee_contrib_rate: number;
+  employee_contrib_annual_base: number;
+  employer_contrib_rate: number;
+  employer_contrib_annual_base: number;
+  tfr_contrib_annual: number;
+  account_id?: string;
+}
+
+export interface SalaryConfig extends SalaryFields {
+  id: string;
+  user_id: string;
+  valid_from: string;
   manual_net_override: number | null;
   computed_net_monthly: number;
   effective_net_monthly: number;
+  calculated_as_of: string;
+  salary_config_id: string;
+  salary_config_valid_from: string;
+  pension_config_id: string | null;
+  pension_config_valid_from: string | null;
+  pension: PensionPayrollBreakdown;
+  tax_config_id: string;
+  tax_config_valid_from: string;
 }
 
-export interface SalaryBreakdown {
+export interface PensionPayrollBreakdown {
+  employee_pension_contribution_annual: number;
+  employer_pension_contribution_annual: number;
+  tfr_contribution_annual: number;
+  pension_payroll_deduction_annual: number;
+  pension_employer_taxable_excess_annual: number;
+  pension_cap_eligible_contributions_annual: number;
+  pension_cap_used_annual: number;
+  pension_cap_excess_annual: number;
+  pension_deductibility_cap: number;
+  pension_cap_scope: string;
+}
+
+export interface SalaryBreakdown extends PensionPayrollBreakdown {
   gross_annual: number;
   social_security: number;
-  pension_deductible: number;
+  tax_config_id: string;
+  tax_config_valid_from: string;
   taxable_base: number;
   income_tax_gross: number;
   employment_deduction: number;
@@ -148,9 +214,17 @@ export interface SalaryBreakdown {
   regional_surtax: number;
   municipal_surtax: number;
   net_annual: number;
-  net_monthly: number;
+  computed_net_monthly: number;
   meal_vouchers_monthly: number;
   welfare_monthly: number;
+  salary_months: 12 | 13 | 14;
+  calculated_as_of?: string | null;
+  salary_config_id?: string | null;
+  salary_config_valid_from?: string | null;
+  pension_config_id?: string | null;
+  pension_config_valid_from?: string | null;
+  manual_net_override?: number | null;
+  effective_net_monthly?: number | null;
 }
 
 // Tax Config
@@ -207,17 +281,12 @@ export interface OnboardingPayload {
   }>;
   saving_accounts?: Array<{ name: string; opening_balance: number }>;
   investment_accounts?: Array<{ name: string; opening_balance: number }>;
-  salary?: {
-    ral: number;
-    employer_contrib_rate: number;
-    voluntary_contrib_rate: number;
-    regional_tax_rate: number;
-    municipal_tax_rate: number;
-    meal_vouchers_annual: number;
-    welfare_annual: number;
-    salary_months?: number;
-    manual_net_override?: number | null;
-  };
+  salary?: SalaryFields & { manual_net_override?: number | null };
+  pension?: {
+    name: string;
+    opening_balance: number;
+    opening_balance_month: string;
+  } & Omit<PensionPayrollInputs, 'account_id'> & { contribution_periods_by_month: number[] };
 }
 
 // User Settings

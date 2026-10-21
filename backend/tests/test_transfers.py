@@ -470,7 +470,7 @@ def test_create_transfer_rejects_invalid_amount(client, amount):
     [
         ("saving", "MySavings"),
         ("investment", "MyBroker"),
-        ("pension", "Pension"),
+        ("pension", "Pension Fund"),
     ],
 )
 def test_create_transfer_accepts_owned_account_types(client, account_type, account_name):

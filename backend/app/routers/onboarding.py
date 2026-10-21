@@ -6,9 +6,11 @@ from app.models.payment_method import CardBankLinkHistory, MainBankHistory, Paym
 from app.models.category import Category
 from app.models.account import Account
 from app.models.salary import SalaryConfig
+from app.models.pension import PensionConfig
 from app.schemas.onboarding import OnboardingPayload
 from app.services.seed import DEFAULT_CATEGORIES
 from app.services.salary import SalaryCalculationError, calculate_salary
+from app.services.pension import PensionPayrollInputs, preview_payroll_effects
 from app.services.tax import resolve_tax_config
 
 router = APIRouter(prefix="/onboarding", tags=["onboarding"])
@@ -42,13 +44,26 @@ def submit_onboarding(
         raise HTTPException(status_code=409, detail="Onboarding has already been completed")
 
     breakdown = None
+    pension_effects = None
     if payload.salary:
-        tax_cfg = resolve_tax_config(db, payload.tracking_start_date[:7], current_user.id)
+        tax_cfg = resolve_tax_config(db, payload.tracking_start_date, current_user.id)
         if not tax_cfg:
             raise HTTPException(422, "No tax config found for the given period")
         try:
-            breakdown = calculate_salary(payload.salary, tax_cfg)
-        except SalaryCalculationError as exc:
+            pension_inputs = None
+            if payload.pension:
+                pension_inputs = PensionPayrollInputs(
+                    employee_contrib_rate=payload.pension.employee_contrib_rate,
+                    employee_contrib_annual_base=payload.pension.employee_contrib_annual_base,
+                    employer_contrib_rate=payload.pension.employer_contrib_rate,
+                    employer_contrib_annual_base=payload.pension.employer_contrib_annual_base,
+                    tfr_contrib_annual=payload.pension.tfr_contrib_annual,
+                )
+            pension_effects = preview_payroll_effects(
+                db, current_user.id, payload.tracking_start_date, pension_inputs
+            )
+            breakdown = calculate_salary(payload.salary, tax_cfg, pension_effects)
+        except (SalaryCalculationError, ValueError) as exc:
             raise HTTPException(422, str(exc)) from exc
 
     _set_setting(db, current_user.id, "tracking_start_date", payload.tracking_start_date)
@@ -113,27 +128,43 @@ def submit_onboarding(
             is_active=(type_ != "Saving"),
         ))
 
-    # Salary (optional)
+    # Pension and salary are independent, effective-dated setup objects.
+    if payload.pension:
+        account = Account(
+            user_id=current_user.id, type="pension", name=payload.pension.name,
+            opening_balance=payload.pension.opening_balance,
+            opening_balance_month=payload.pension.opening_balance_month,
+        )
+        db.add(account)
+        db.flush()
+        db.add(PensionConfig(
+            user_id=current_user.id, account_id=account.id,
+            valid_from=payload.tracking_start_date,
+            employee_contrib_rate=payload.pension.employee_contrib_rate,
+            employee_contrib_annual_base=payload.pension.employee_contrib_annual_base,
+            employer_contrib_rate=payload.pension.employer_contrib_rate,
+            employer_contrib_annual_base=payload.pension.employer_contrib_annual_base,
+            tfr_contrib_annual=payload.pension.tfr_contrib_annual,
+            contribution_periods_by_month=payload.pension.contribution_periods_by_month,
+        ))
+
     if payload.salary:
-        if payload.salary.employer_contrib_rate > 0 or payload.salary.voluntary_contrib_rate > 0:
-            db.add(Account(
-                user_id=current_user.id, type="pension", name="Pension", opening_balance=0,
-            ))
         db.add(SalaryConfig(
             user_id=current_user.id,
             valid_from=payload.tracking_start_date,
             ral=payload.salary.ral,
-            employer_contrib_rate=payload.salary.employer_contrib_rate,
-            voluntary_contrib_rate=payload.salary.voluntary_contrib_rate,
             regional_tax_rate=payload.salary.regional_tax_rate,
             municipal_tax_rate=payload.salary.municipal_tax_rate,
             meal_vouchers_annual=payload.salary.meal_vouchers_annual,
             welfare_annual=payload.salary.welfare_annual,
             salary_months=payload.salary.salary_months,
             manual_net_override=payload.salary.manual_net_override,
-            computed_net_monthly=breakdown.net_monthly,
         ))
 
     _set_setting(db, current_user.id, "onboarding_complete", "true")
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return {"ok": True}

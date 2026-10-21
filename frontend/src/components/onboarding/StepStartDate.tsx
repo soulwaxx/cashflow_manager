@@ -10,7 +10,8 @@ export default function StepStartDate() {
   });
 
   const onSubmit = (d: { tracking_start_date: string }) => {
-    updateData({ tracking_start_date: d.tracking_start_date });
+    const month = d.tracking_start_date.slice(0, 7);
+    updateData({ tracking_start_date: `${month}-01` });
     setStep(2);
   };
 
@@ -18,7 +19,7 @@ export default function StepStartDate() {
     <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
       <h2 className="text-lg font-semibold">When do you want to start tracking?</h2>
       <Input
-        label="Tracking start date"
+        label="Tracking start month (saved as the first day of the month)"
         type="date"
         {...register('tracking_start_date', { required: true })}
       />
